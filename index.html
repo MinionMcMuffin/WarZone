@@ -1233,6 +1233,9 @@ const trackMarks = (() => {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
   g.setAttribute('color', new THREE.BufferAttribute(col, 4).setUsage(THREE.DynamicDrawUsage));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  // lit material needs normals; without them lighting goes NaN and bloom smears it into black squares
+  const nrm = new Float32Array(MAX * 4 * 3); for (let i = 1; i < nrm.length; i += 3) nrm[i] = 1;
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   const tex = canvasTex(64, (c, s) => { c.fillStyle = '#fff'; c.fillRect(0, 0, s, s); c.fillStyle = '#555'; for (let y = 0; y < s; y += 16) c.fillRect(4, y, s - 8, 7); });
   const mat = new THREE.MeshStandardMaterial({ color: 0x2e2419, map: tex, vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 1 });
