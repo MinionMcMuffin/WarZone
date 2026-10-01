@@ -46,7 +46,25 @@ canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block
 #gunMark { position: absolute; left: 0; top: 0; width: 30px; height: 30px; margin: -15px 0 0 -15px; border: 2px solid var(--hud); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.35); transition: border-color 0.15s; }
 #gunMark.ready { border-color: var(--ok); }
 #gunMark.loading { border-color: var(--amber); border-style: dashed; }
+#gunMark.on { border-color: var(--danger); border-style: solid; box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 0 14px rgba(234,74,58,0.8); }
+#gunMark.on::before { content: "ON TARGET"; position: absolute; top: 34px; left: 50%; transform: translateX(-50%); font: 700 11px/1 var(--f-body); letter-spacing: 0.18em; color: #ffd1c9; white-space: nowrap; text-shadow: 0 1px 2px #000; }
 #gunMark::after { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; background: currentColor; border-radius: 50%; color: var(--hud); }
+#markers { position: absolute; inset: 0; overflow: hidden; }
+.mk { position: absolute; left: 0; top: 0; will-change: transform; }
+.mk .br { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); --c: var(--danger);
+  background: linear-gradient(var(--c), var(--c)) top left / 10px 2px, linear-gradient(var(--c), var(--c)) top left / 2px 10px,
+    linear-gradient(var(--c), var(--c)) top right / 10px 2px, linear-gradient(var(--c), var(--c)) top right / 2px 10px,
+    linear-gradient(var(--c), var(--c)) bottom left / 10px 2px, linear-gradient(var(--c), var(--c)) bottom left / 2px 10px,
+    linear-gradient(var(--c), var(--c)) bottom right / 10px 2px, linear-gradient(var(--c), var(--c)) bottom right / 2px 10px;
+  background-repeat: no-repeat; filter: drop-shadow(0 0 2px rgba(0,0,0,0.7)); }
+.mk.lock .br { --c: #ffd1c9; }
+.mk .arr { display: none; position: absolute; left: 0; top: 0; width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 16px solid var(--danger); transform: translate(-50%, -50%) rotate(var(--r, 0rad)); filter: drop-shadow(0 0 2px rgba(0,0,0,0.7)); }
+.mk.off .br { display: none; }
+.mk.off .arr { display: block; }
+.mk .info { position: absolute; left: 0; transform: translateX(-50%); display: grid; gap: 3px; justify-items: center; }
+.mk .hp { width: 44px; height: 4px; background: rgba(0,0,0,0.5); }
+.mk .hp b { display: block; height: 100%; background: var(--danger); }
+.mk .d { font: 700 11px/1 var(--f-mono); color: #ffd1c9; text-shadow: 0 1px 2px #000; white-space: nowrap; }
 #hitmark { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; transition: opacity 0.25s; }
 #hitmark::before, #hitmark::after { content: ""; position: absolute; background: var(--danger); }
 #hitmark::before { left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; mask: linear-gradient(#000 0 35%, transparent 35% 65%, #000 65%); -webkit-mask: linear-gradient(#000 0 35%, transparent 35% 65%, #000 65%); }
@@ -158,6 +176,7 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
     </g>
     <circle cx="22" cy="22" r="1.6" fill="#dfe6cf"/>
   </svg>
+  <div id="markers"></div>
   <div id="gunMark"></div>
   <div id="hitmark"></div>
   <div id="dmgDirs"></div>
@@ -385,7 +404,7 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 9000);
 const FOG_COLOR = new THREE.Color(0xc7a98a);
-scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0017);
+scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0014);
 
 // Sun
 const SUN_EL = THREE.MathUtils.degToRad(15), SUN_AZ = 2.45;
@@ -760,7 +779,7 @@ function knockTree(tr, dirX, dirZ) {
 }
 
 // Grass: instanced tufts with an alpha-cut blade texture and wind sway
-let grassMesh, grassMax = 0;
+let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
 {
   const tex = canvasTex(256, (g, s) => {
     g.clearRect(0, 0, s, s);
@@ -816,6 +835,66 @@ let grassMesh, grassMax = 0;
   }
   grassMax = n; grassMesh.count = n;
   scene.add(grassMesh);
+
+  // Wildflower patches: same cards, a stems-and-petals texture, clustered by noise
+  const ftex = canvasTex(256, (g, s) => {
+    g.clearRect(0, 0, s, s);
+    const rnd = mulberry32(33), hues = ['#f2d14b', '#f4efe2', '#b98bd8', '#e8803a'];
+    for (let i = 0; i < 18; i++) {
+      const x = s * (0.1 + rnd() * 0.8), h = s * (0.35 + rnd() * 0.45), lean = (rnd() - 0.5) * s * 0.12;
+      g.strokeStyle = '#4d5e2a'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, s); g.quadraticCurveTo(x, s - h * 0.5, x + lean, s - h); g.stroke();
+      g.fillStyle = hues[Math.floor(rnd() * hues.length)];
+      for (let k = 0; k < 6; k++) { const a = k / 6 * 6.28; g.beginPath(); g.arc(x + lean + Math.cos(a) * 6, s - h + Math.sin(a) * 6, 5, 0, 6.28); g.fill(); }
+      g.fillStyle = '#7a5a1a'; g.beginPath(); g.arc(x + lean, s - h, 3.5, 0, 6.28); g.fill();
+    }
+  });
+  const fmat = new THREE.MeshStandardMaterial({ map: ftex, alphaTest: 0.45, roughness: 0.9 });
+  fmat.onBeforeCompile = mat.onBeforeCompile;
+  const FMAX = 14000;
+  flowerMesh = new THREE.InstancedMesh(geo, fmat, FMAX);
+  flowerMesh.receiveShadow = true;
+  let fn = 0, ftries = 0;
+  while (fn < FMAX && ftries++ < FMAX * 20) {
+    const r = Math.sqrt(rand()) * (ARENA + 20), a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (fbm(x * 0.015 + 70, z * 0.015 - 30, 3) < 0.22 || roadDist(x, z) < 5) continue;
+    if (terrainNormal(x, z).y < 0.88) continue;
+    const sc = R(0.55, 0.95);
+    q.setFromAxisAngle(up, rand() * 6.28);
+    m.compose(new THREE.Vector3(x, terrainHeight(x, z) - 0.05, z), q, new THREE.Vector3(sc, sc, sc));
+    flowerMesh.setMatrixAt(fn++, m);
+  }
+  flowerMax = fn; flowerMesh.count = fn;
+  scene.add(flowerMesh);
+
+  // Low shrubs scattered between the trees
+  const bparts = [];
+  const bc0 = new THREE.Color(0x2f3d1c), bc1 = new THREE.Color(0x5f6a30);
+  for (let i = 0; i < 5; i++) {
+    const b = new THREE.IcosahedronGeometry(R(0.55, 0.85), 1), bp = b.attributes.position;
+    for (let k = 0; k < bp.count; k++) { const f = 1 + 0.22 * noise2(bp.getX(k) * 2 + i * 3, bp.getY(k) * 2 + bp.getZ(k)); bp.setXYZ(k, bp.getX(k) * f, bp.getY(k) * f * 0.8, bp.getZ(k) * f); }
+    b.computeVertexNormals();
+    const a = i / 5 * 6.28; b.translate(i ? Math.cos(a) * 0.6 : 0, i ? R(0.45, 0.7) : 0.85, i ? Math.sin(a) * 0.6 : 0);
+    paintGeo(b, (c, x, y) => c.copy(bc0).lerp(bc1, clamp(y / 1.4, 0, 1)));
+    bparts.push(b);
+  }
+  const bushGeo = merge(bparts);
+  const bushMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+  bushMat.onBeforeCompile = mat.onBeforeCompile;
+  const BMAX = 1800, bush = new THREE.InstancedMesh(bushGeo, bushMat, BMAX);
+  let bn = 0, btries = 0;
+  const bcol = new THREE.Color();
+  while (bn < BMAX && btries++ < BMAX * 20) {
+    const r = Math.sqrt(rand()) * (ARENA + 120), a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (roadDist(x, z) < 7 || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 40 || Math.hypot(x + 150, z + 150) < 25) continue;
+    if (fbm(x * 0.006 + 3, z * 0.006 - 8, 3) < -0.15 && rand() > 0.25) continue;
+    if (terrainNormal(x, z).y < 0.82) continue;
+    const sc = R(0.7, 1.6);
+    q.setFromAxisAngle(up, rand() * 6.28);
+    m.compose(new THREE.Vector3(x, terrainHeight(x, z) - 0.15, z), q, new THREE.Vector3(sc, sc * R(0.8, 1.2), sc));
+    bush.setMatrixAt(bn, m); bush.setColorAt(bn, bcol.setRGB(R(0.8, 1.15), R(0.85, 1.1), R(0.7, 1.0))); bn++;
+  }
+  bush.count = bn; bush.castShadow = true; bush.receiveShadow = true;
+  scene.add(bush);
 }
 
 // =====================================================================
@@ -1024,10 +1103,10 @@ class ParticlePool {
       uniforms: { map: { value: tex }, fogColor: { value: scene.fog.color }, fogDensity: { value: scene.fog.density }, sunDir: { value: sunDir } },
       vertexShader: `
         attribute vec3 offset; attribute vec4 pcolor; attribute vec2 psr;
-        varying vec2 vUv; varying vec4 vC; varying float vFog;
+        varying vec2 vUv; varying vec4 vC; varying float vFog; varying vec3 vDir;
         uniform float fogDensity;
         void main(){
-          vUv = uv; vC = pcolor;
+          vUv = uv; vC = pcolor; vDir = normalize(offset - cameraPosition);
           vec4 mv = modelViewMatrix * vec4(offset, 1.0);
           float c = cos(psr.y), s = sin(psr.y);
           vec2 p = vec2(c*position.x - s*position.y, s*position.x + c*position.y);
@@ -1038,8 +1117,13 @@ class ParticlePool {
       fragmentShader: additive ? `
         uniform sampler2D map; varying vec2 vUv; varying vec4 vC; varying float vFog;
         void main(){ vec4 t = texture2D(map, vUv); float a = t.a * vC.a; gl_FragColor = vec4(vC.rgb * t.rgb * a * (1.0 - vFog), 1.0); }` : `
-        uniform sampler2D map; uniform vec3 fogColor; varying vec2 vUv; varying vec4 vC; varying float vFog;
-        void main(){ vec4 t = texture2D(map, vUv); float a = t.a * vC.a; if (a < 0.003) discard; vec3 c = vC.rgb * t.rgb; gl_FragColor = vec4(mix(c, fogColor, vFog), a); }`,
+        uniform sampler2D map; uniform vec3 fogColor, sunDir; varying vec2 vUv; varying vec4 vC; varying float vFog; varying vec3 vDir;
+        void main(){
+          vec4 t = texture2D(map, vUv); float a = t.a * vC.a; if (a < 0.003) discard;
+          float g = pow(max(dot(vDir, sunDir), 0.0), 5.0);
+          vec3 c = vC.rgb * t.rgb * vec3(1.1, 1.0, 0.9) + vec3(1.0, 0.6, 0.32) * g * 0.75 * (1.2 - t.a);
+          gl_FragColor = vec4(mix(c, fogColor, vFog), a);
+        }`,
       transparent: true, depthWrite: false,
       blending: additive ? THREE.CustomBlending : THREE.NormalBlending,
     });
@@ -1086,6 +1170,7 @@ const firePool = new ParticlePool(2500, fireTex, true);
 const sparkPool = new ParticlePool(1500, dotTex, true);
 
 // Point-light pool (fixed count so shaders never recompile)
+const fireLights = [0, 1].map(() => { const l = new THREE.PointLight(0xff7a2a, 0, 45, 2); scene.add(l); return l; });
 const flashes = [...Array(4)].map(() => { const l = new THREE.PointLight(0xffa860, 0, 80, 2); scene.add(l); return { l, t: 0, dur: 1, peak: 0 }; });
 let flashIdx = 0;
 function lightFlash(p, peak, dur, color = 0xffa860) { const f = flashes[flashIdx++ % flashes.length]; f.l.position.set(p.x, p.y + 1, p.z); f.l.color.set(color); f.peak = peak; f.dur = dur; f.t = 0; }
@@ -1403,19 +1488,36 @@ const SCHEMES = {
   enemy: { camo: camoTexture([0xb89f6e, 0x917a54, 0x6c5a42, 0xd0b98b], 202) },
 };
 const darkMetal = new THREE.MeshStandardMaterial({ color: 0x2a2b27, roughness: 0.55, metalness: 0.65 });
-const wheelMat = new THREE.MeshStandardMaterial({ color: 0x34352f, roughness: 0.6, metalness: 0.5 });
+const wheelMat = new THREE.MeshStandardMaterial({ color: 0x3d382f, roughness: 0.7, metalness: 0.4 });
+const blobMat = new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(0,0,0,0.8)'], [0.55, 'rgba(0,0,0,0.5)'], [1, 'rgba(0,0,0,0)']]), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+const BLOB_GEO = new THREE.PlaneGeometry(5.6, 10).rotateX(-Math.PI / 2);
 const glassMat = new THREE.MeshStandardMaterial({ color: 0x0b1a26, roughness: 0.05, metalness: 1.0 });
 const tarpMat = new THREE.MeshStandardMaterial({ color: 0x5b5a3f, roughness: 1 });
 const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffe2a8, emissiveIntensity: 2.5 });
 const wreckMat = new THREE.MeshStandardMaterial({ color: 0x1b1714, roughness: 0.95, metalness: 0.2, map: detailTex });
-for (const k in SCHEMES) SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.64, metalness: 0.12, normalMap: detailNormal, normalScale: new THREE.Vector2(0.25, 0.25) });
+for (const k in SCHEMES) {
+  SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.64, metalness: 0.12, normalMap: detailNormal, normalScale: new THREE.Vector2(0.25, 0.25) });
+  // hull variant: dried mud and dust caked onto the lower hull and running gear
+  const hm = SCHEMES[k].hullMat = SCHEMES[k].mat.clone();
+  hm.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying float vLY;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvLY = position.y;');
+    sh.fragmentShader = 'varying float vLY;\n' + sh.fragmentShader
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float mudN = texture2D(map, vMapUv * 3.7).g;
+        float mud = 1.0 - smoothstep(0.4, 1.15, vLY + (mudN - 0.5) * 0.6);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.29, 0.23, 0.16), mud * 0.8);`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.97, mud);');
+  };
+}
 
 function buildTankVisual(scheme) {
   const camo = SCHEMES[scheme].mat;
   const root = new THREE.Group();
   const mk = (geo, mat, parent = root) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
   const meshes = [];
-  meshes.push(mk(TANK_GEO.hullCamo, camo), mk(TANK_GEO.hullDark, darkMetal));
+  meshes.push(mk(TANK_GEO.hullCamo, SCHEMES[scheme].hullMat), mk(TANK_GEO.hullDark, darkMetal));
+  // soft contact shadow so the tank sits in the ground instead of floating on it
+  const blob = new THREE.Mesh(BLOB_GEO, blobMat); blob.position.y = 0.06; blob.renderOrder = 1; root.add(blob);
   const lamps = mk(TANK_GEO.lights, lampMat); lamps.castShadow = false;
   const tracks = [], wheels = [];
   for (const sx of [-1, 1]) {
@@ -1449,7 +1551,7 @@ function buildTankVisual(scheme) {
 const tanks = [];
 const HB = { x: 1.98, y0: 0.15, y1: 2.45, z0: -3.8, z1: 3.95 }; // hull hitbox (local)
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _q1 = new THREE.Quaternion(), _m1 = new THREE.Matrix4();
-const SHELL_SPEED = 240, GRAVITY = 9.81;
+const SHELL_SPEED = 330, GRAVITY = 9.81;
 
 class Tank {
   constructor(isPlayer, x, z, heading) {
@@ -1460,7 +1562,7 @@ class Tank {
     this.heading = heading; this.speed = 0; this.turn = 0;
     this.turretYaw = 0; this.gunElev = 0; this.turretRate = 0;
     this.maxHp = isPlayer ? 100 : 100; this.hp = this.maxHp; this.alive = true;
-    this.reload = 0; this.reloadTime = isPlayer ? 2.6 : 5;
+    this.reload = 0; this.reloadTime = isPlayer ? 2.2 : 5;
     this.recoil = 0; this.pitchOff = 0; this.pitchVel = 0; this.rollOff = 0; this.rollVel = 0;
     this.trackDist = [0, 0]; this.lastMark = [null, null];
     this.quat = new THREE.Quaternion();
@@ -1667,6 +1769,17 @@ function updateFlying(dt) {
 
 // Persistent fire/smoke emitters (wrecks, damaged tanks, scenery)
 const emitters = [];
+function updateFireLights() {
+  const burning = emitters.filter((e) => e.lp && (e.kind === 'scenery' || (e.kind === 'wreck' && e.t < 75)));
+  burning.sort((a, b) => a.lp.distanceToSquared(camera.position) - b.lp.distanceToSquared(camera.position));
+  fireLights.forEach((l, i) => {
+    const e = burning[i];
+    if (!e) { l.intensity = 0; return; }
+    const k = e.kind === 'wreck' ? Math.max(0.35, 1 - e.t / 90) : 0.8;
+    l.position.copy(e.lp).y += 0.8;
+    l.intensity = 140 * k * (0.75 + 0.25 * noise2(game.time * 9 + i * 10, 3) + 0.15 * Math.sin(game.time * 23 + i));
+  });
+}
 function updateEmitters(dt) {
   for (let i = emitters.length - 1; i >= 0; i--) {
     const e = emitters[i]; e.t += dt;
@@ -1675,6 +1788,7 @@ function updateEmitters(dt) {
       if (e.kind === 'damaged' && !e.tank.alive) { emitters.splice(i, 1); continue; }
       p = _v1.set(0, 1.6, -1.8).applyMatrix4(e.tank.v.root.matrixWorld);
     } else p = e.pos;
+    (e.lp ||= new THREE.Vector3()).copy(p);
     if (e.kind === 'damaged' && e.tank.hp > e.tank.maxHp * 0.35) { e.tank.smoking = false; emitters.splice(i, 1); continue; }
     const k = e.kind === 'wreck' ? Math.max(0.35, 1 - e.t / 90) : 1;
     if (e.kind === 'damaged') { if (Math.random() < dt * 10) particles.smoke(p, 0.5, 0.18, 3); }
@@ -1785,7 +1899,8 @@ function impact(s, hit) {
     const tk = hit.tank;
     // ricochet on very oblique hits
     const cosA = Math.abs(hit.localDir.dot(hit.localN));
-    if (!mg && cosA < 0.24 && Math.random() < 0.75 && s.ric < 1) {
+    const mine = s.owner === player.tank;
+    if (!mg && cosA < (mine ? 0.1 : 0.24) && Math.random() < (mine ? 0.35 : 0.75) && s.ric < 1) {
       particles.sparks(p, 30);
       sfx.ricochet(p);
       const shooter = s.owner, n = hit.localN.clone().transformDirection(tk.v.root.matrixWorld);
@@ -1793,15 +1908,15 @@ function impact(s, hit) {
       if (tk === player.tank) feed('Ricochet. Armour held.', false); else if (shooter === player.tank) feed('Ricochet. No penetration.', true);
       return true;
     }
-    if (mg) { particles.sparks(p, 4); if (Math.random() < 0.3) sfx.ping(p); tk.damage(0.35, s.owner, p); }
+    if (mg) { particles.sparks(p, 4); if (Math.random() < 0.3) sfx.ping(p); tk.damage(0.7, s.owner, p); }
     else {
       particles.sparks(p, 40);
       particles.explosion(p, 0.6);
       sfx.clang(p);
-      let dmg = tk.isPlayer ? rr(13, 19) : rr(36, 46);
+      let dmg = tk.isPlayer ? rr(13, 19) : rr(56, 66);
       const lp = hit.localP;
       let zone = 'front';
-      if (lp.z < HB.z0 + 1.2) { dmg *= 1.5; zone = 'rear'; } else if (Math.abs(lp.x) > HB.x - 0.2 && lp.z < 2.5) { dmg *= 1.18; zone = 'side'; }
+      if (lp.z < HB.z0 + 1.2) { dmg *= 1.7; zone = 'rear'; } else if (Math.abs(lp.x) > HB.x - 0.2 && lp.z < 2.5) { dmg *= 1.3; zone = 'side'; }
       if (lp.y > 1.45) zone += ' turret';
       const wasAlive = tk.alive;
       tk.damage(dmg, s.owner, p);
@@ -1922,6 +2037,28 @@ const sfx = (() => {
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.55, 0.92);
+const shafts = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, sunPos: { value: new THREE.Vector2(0.5, 0.5) }, intensity: { value: 0 }, threshold: { value: 2.4 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform vec2 sunPos; uniform float intensity, threshold; varying vec2 vUv;
+    void main(){
+      vec4 base = texture2D(tDiffuse, vUv);
+      vec2 delta = (vUv - sunPos) / 56.0 * 0.85;
+      vec2 uv = vUv; float decay = 1.0; vec3 acc = vec3(0.0);
+      float jitter = fract(sin(dot(vUv, vec2(12.9898, 78.233))) * 43758.5453);
+      uv -= delta * jitter;
+      for (int i = 0; i < 56; i++) {
+        uv -= delta;
+        vec3 sm = texture2D(tDiffuse, clamp(uv, 0.0, 1.0)).rgb;
+        float l = dot(sm, vec3(0.2126, 0.7152, 0.0722));
+        acc += min(sm, vec3(8.0)) * smoothstep(threshold, threshold * 2.5, l) * decay;
+        decay *= 0.962;
+      }
+      gl_FragColor = vec4(base.rgb + acc / 56.0 * intensity * vec3(1.0, 0.8, 0.58), base.a);
+    }`,
+});
+composer.addPass(shafts);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const smaa = new SMAAPass(innerWidth, innerHeight);
@@ -1954,14 +2091,16 @@ const grade = new ShaderPass({
 });
 composer.addPass(grade);
 
+let shaftsAllowed = true;
 function applyQuality() {
   const q = QUALITY[qualityName];
   renderer.setPixelRatio(q.pr);
   composer.setPixelRatio(q.pr);
   composer.setSize(innerWidth, innerHeight);
   if (sun.shadow.mapSize.x !== q.shadow) { sun.shadow.mapSize.set(q.shadow, q.shadow); sun.shadow.map?.dispose(); sun.shadow.map = null; }
-  bloom.enabled = q.bloom; smaa.enabled = q.smaa;
+  bloom.enabled = q.bloom; smaa.enabled = q.smaa; shaftsAllowed = q.bloom;
   grassMesh.count = Math.floor(grassMax * q.grass);
+  flowerMesh.count = Math.floor(flowerMax * q.grass);
   document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.q === qualityName)));
   try { localStorage.setItem('warzone.quality', qualityName); } catch (e) { }
 }
@@ -2163,7 +2302,7 @@ function spawnEnemy() {
   const pt = player.tank;
   for (let tries = 0; tries < 50; tries++) {
     const a = rr(0, 6.28), r = rr(ARENA - 40, ARENA + 30), x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (pt && Math.hypot(x - pt.pos.x, z - pt.pos.z) < 220) continue;
+    if (pt && Math.hypot(x - pt.pos.x, z - pt.pos.z) < 170) continue;
     if (queryColliders(x, z, 6).some((c) => c.type === 'obb' || (c.r > 1.5 && !c.tree))) continue;
     const t = new Tank(false, x, z, Math.atan2(-x, -z));
     const w = game.wave;
@@ -2321,6 +2460,7 @@ function updateCamera(dt) {
     return;
   }
   if (!t.alive) {
+    t.v.root.visible = true;
     cam.orbit += dt * 0.15;
     const r = 22, px = t.pos.x + Math.sin(cam.orbit) * r, pz = t.pos.z + Math.cos(cam.orbit) * r;
     camera.position.set(px, Math.max(terrainHeight(px, pz) + 2, t.pos.y + 7), pz);
@@ -2329,8 +2469,34 @@ function updateCamera(dt) {
   }
   const pivot = _camTarget.copy(t.pos); pivot.y += 3.4;
   const third = _v1.copy(pivot).addScaledVector(_aimDir, -cam.dist); third.y += 1.2;
+  // pull the camera in front of trees, rocks and walls so they never hide the tank
+  {
+    const dx = third.x - pivot.x, dy = third.y - pivot.y, dz = third.z - pivot.z, L2 = dx * dx + dz * dz + 1e-6;
+    let te = 1;
+    for (const c of queryColliders((pivot.x + third.x) / 2, (pivot.z + third.z) / 2, cam.dist / 2 + 8)) {
+      if (c.type === 'circle') {
+        if (c.tree && !c.tree.alive) continue;
+        const rad = c.tree ? 2.4 * c.tree.s : c.r + 0.6, h = c.tree ? 11 * c.tree.s : (c.h || 2);
+        const tt = clamp(((c.x - pivot.x) * dx + (c.z - pivot.z) * dz) / L2, 0, 1);
+        const px = pivot.x + dx * tt - c.x, pz = pivot.z + dz * tt - c.z, d2 = px * px + pz * pz;
+        if (d2 < rad * rad) {
+          const y = pivot.y + dy * tt, g = terrainHeight(c.x, c.z);
+          if (y < g + h) te = Math.min(te, Math.max(0, tt - Math.sqrt(rad * rad - d2) / Math.sqrt(L2)));
+        }
+      } else {
+        const ox = pivot.x - c.x, oz = pivot.z - c.z;
+        const r = rayBox(ox * c.cos - oz * c.sin, pivot.y, ox * c.sin + oz * c.cos, dx * c.cos - dz * c.sin, dy, dx * c.sin + dz * c.cos, -c.hw, c.hw, c.y0, c.y0 + c.h, -c.hd, c.hd);
+        if (r && r.t < 1) te = Math.min(te, r.t);
+      }
+    }
+    const want = Math.max(cam.dist * te - 0.7, 4.5);
+    cam.curDist = want < (cam.curDist ?? cam.dist) ? want : damp(cam.curDist ?? cam.dist, want, 2.5, dt);
+    third.copy(pivot).addScaledVector(_aimDir, -cam.curDist); third.y += 1.2 * cam.curDist / cam.dist;
+  }
   const gh = terrainHeight(third.x, third.z) + 1.0; if (third.y < gh) third.y = gh;
   const sight = t.v.sight.getWorldPosition(_v3);
+  // in the gunner's sight the camera sits inside our own turret: hide the hull so it can't block the view
+  t.v.root.visible = cam.zoomAmt < 0.5;
   camera.position.lerpVectors(third, sight, cam.zoomAmt);
   camera.fov = lerp(60, 11, cam.zoomAmt);
   camera.updateProjectionMatrix();
@@ -2343,7 +2509,19 @@ function updateCamera(dt) {
   // aim point straight down the camera axis
   const fromCam = camera.position.clone();
   const dir = _aimDir.clone();
-  cam.aim.copy(raycastWorld(fromCam.addScaledVector(dir, cam.zoomAmt > 0.5 ? 0.5 : cam.dist * 0.9), dir, 1600, t));
+  cam.aim.copy(raycastWorld(fromCam.addScaledVector(dir, cam.zoomAmt > 0.5 ? 0.5 : cam.curDist * 0.9), dir, 1600, t));
+  // aim assist: if the crosshair is near a visible enemy, lay the gun on its centre of mass
+  let best = null, bestA = 1e9;
+  for (const e of tanks) {
+    if (e.isPlayer || !e.alive) continue;
+    const c = _v2.copy(e.pos); c.y += 1.3;
+    const to = _v3.copy(c).sub(camera.position), d = to.length(); to.divideScalar(d);
+    const ang = Math.acos(clamp(to.dot(_aimDir), -1, 1));
+    const lim = Math.max(0.028, 3.4 / d) * (cam.zoomAmt > 0.5 ? 0.55 : 1) * (e === cam.lock ? 1.6 : 1);
+    if (d < 650 && ang < lim && ang < bestA && hasLOS(camera.position, c)) { best = e; bestA = ang; }
+  }
+  cam.lock = best;
+  if (best) cam.aim.copy(best.pos).setY(best.pos.y + 1.3);
 }
 
 // Predicted impact of the gun as currently laid (shown as the circle reticle)
@@ -2354,9 +2532,9 @@ function predictImpact(t) {
   for (let i = 0; i < 200; i++) {
     _pprev.copy(_pp); _pv.y -= GRAVITY * step; _pp.addScaledVector(_pv, step);
     const h = segmentHit(_pprev, _pp, t, true);
-    if (h) return h.point;
+    if (h) return h;
   }
-  return _pp;
+  return { point: _pp, type: 'none' };
 }
 
 // =====================================================================
@@ -2364,6 +2542,43 @@ function predictImpact(t) {
 // =====================================================================
 const hud = { gunMark: $('gunMark'), reloadBar: $('reloadBar'), heatBar: $('heatBar'), loadState: $('loadState'), vig: $('vig') };
 const _proj = new THREE.Vector3();
+const markersEl = $('markers'), markerMap = new Map();
+function updateMarkers() {
+  const W = innerWidth, H = innerHeight, f = H / 2 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const seen = new Set();
+  for (const e of tanks) {
+    if (e.isPlayer || !e.alive || !e.ai) continue;
+    seen.add(e);
+    let m = markerMap.get(e);
+    if (!m) {
+      m = document.createElement('div'); m.className = 'mk';
+      m.innerHTML = '<div class="br"></div><div class="arr"></div><div class="info"><div class="hp"><b></b></div><div class="d"></div></div>';
+      m._br = m.children[0]; m._info = m.children[2]; m._hp = m.querySelector('.hp b'); m._d = m.querySelector('.d');
+      markersEl.appendChild(m); markerMap.set(e, m);
+    }
+    _proj.copy(e.pos); _proj.y += 1.3;
+    const dist = camera.position.distanceTo(_proj);
+    _proj.project(camera);
+    let x = (_proj.x * 0.5 + 0.5) * W, y = (-_proj.y * 0.5 + 0.5) * H;
+    const behind = _proj.z > 1, off = behind || x < 0 || x > W || y < 0 || y > H;
+    m.classList.toggle('off', off); m.classList.toggle('lock', cam.lock === e);
+    if (off) {
+      let dx = x - W / 2, dy = y - H / 2; if (behind) { dx = -dx; dy = -dy; }
+      const a = Math.atan2(dy, dx), k = Math.min((W / 2 - 46) / Math.max(Math.abs(Math.cos(a)), 1e-4), (H / 2 - 46) / Math.max(Math.abs(Math.sin(a)), 1e-4));
+      x = W / 2 + Math.cos(a) * k; y = H / 2 + Math.sin(a) * k;
+      m.style.setProperty('--r', (a + Math.PI / 2) + 'rad');
+      m._info.style.top = '14px';
+    } else {
+      const bw = clamp(6.5 * f / dist, 28, 320), bh = clamp(3.4 * f / dist, 20, 170);
+      m._br.style.width = bw + 'px'; m._br.style.height = bh + 'px';
+      m._info.style.top = (bh / 2 + 6) + 'px';
+    }
+    m._hp.style.width = (e.hp / e.maxHp * 100) + '%';
+    m._d.textContent = Math.round(dist) + ' m';
+    m.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+  }
+  for (const [e, m] of markerMap) if (!seen.has(e)) { m.remove(); markerMap.delete(e); }
+}
 function updateHUD(dt) {
   const t = player.tank; if (!t) return;
   const hp = t.hp / t.maxHp, cells = Math.ceil(hp * 20);
@@ -2384,12 +2599,13 @@ function updateHUD(dt) {
   hud.heatBar.firstElementChild.style.width = (game.mgHeat * 100).toFixed(1) + '%';
   hud.heatBar.classList.toggle('hot', game.mgCool);
   // gun reticle
-  const ip = predictImpact(t);
+  const ipHit = predictImpact(t), ip = ipHit.point;
+  const onTarget = ipHit.type === 'tank' && ipHit.tank.alive && !ipHit.tank.isPlayer;
   _proj.copy(ip).project(camera);
   const onScreen = _proj.z < 1;
   hud.gunMark.style.display = onScreen && t.alive ? '' : 'none';
   hud.gunMark.style.transform = `translate(${(_proj.x * 0.5 + 0.5) * innerWidth}px, ${(-_proj.y * 0.5 + 0.5) * innerHeight}px)`;
-  hud.gunMark.className = t.reload > 0 ? 'loading' : 'ready';
+  hud.gunMark.className = (t.reload > 0 ? 'loading' : 'ready') + (onTarget ? ' on' : '');
   $('rangeText').textContent = String(Math.round(camera.position.distanceTo(cam.aim))).padStart(4, '0') + ' m';
   // scope overlay
   const sc = cam.zoomAmt > 0.6;
@@ -2406,6 +2622,7 @@ function updateHUD(dt) {
     a.style.transform = `rotate(${rel}rad)`; a.style.opacity = Math.min(1, a._t);
   }
   $('warn').hidden = Math.hypot(t.pos.x, t.pos.z) < ARENA + 20;
+  updateMarkers();
   drawCompass(cam.yaw);
   drawRadar(dt);
 }
@@ -2474,6 +2691,7 @@ function frame() {
     shells.update(simDt);
     updateFlying(simDt);
     updateEmitters(simDt);
+    updateFireLights();
     for (let i = fallingTrees.length - 1; i >= 0; i--) {
       const tr = fallingTrees[i]; tr.fallVel += simDt * 2.2; tr.fall = Math.min(Math.PI / 2 - 0.08, tr.fall + tr.fallVel * simDt);
       setTreeMatrix(tr); tr.mesh.instanceMatrix.needsUpdate = true;
@@ -2503,6 +2721,17 @@ function frame() {
   const pt = player.tank;
   sfx.engine(pt ? pt.input.throttle : 0, pt ? pt.speed : 0, pt ? pt.turretRate : 0, !!(pt && pt.alive && game.mode === 'play'));
 
+  // god rays when looking toward the low sun
+  {
+    const facing = camera.getWorldDirection(_v1).dot(sunDir);
+    const k = smoothstep(0.25, 0.85, facing) * (1 - cam.zoomAmt * 0.6);
+    shafts.enabled = shaftsAllowed && k > 0.01;
+    if (shafts.enabled) {
+      _proj.copy(camera.position).addScaledVector(sunDir, 1000).project(camera);
+      shafts.uniforms.sunPos.value.set(_proj.x * 0.5 + 0.5, _proj.y * 0.5 + 0.5);
+      shafts.uniforms.intensity.value = k * 0.5;
+    }
+  }
   composer.render(dt);
   requestAnimationFrame(frame);
 }
