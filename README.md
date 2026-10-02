@@ -15,7 +15,7 @@ Three.js, N8AO and postprocessing load from the jsDelivr CDN, so you need a netw
 
 ## Eras
 
-Each era is self-contained: tanks, infantry weapons, uniforms, insignia, wrecks and colour grade all match the period, and nothing crosses between eras.
+Each era is self-contained and has its own battlefield: sunny Italian summer for WW2, snow and falling snow for Korea, monsoon rain and red earth for Vietnam, misty autumn for the Cold War, and golden hour for Modern. Tanks, infantry weapons, uniforms, insignia, wrecks and colour grade all match the period, and nothing crosses between eras.
 
 | Era | Your tanks | Enemy tanks | Your kit | Enemy infantry |
 | --- | --- | --- | --- | --- |
