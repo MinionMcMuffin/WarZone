@@ -20,7 +20,9 @@ Each era is self-contained: tanks, infantry weapons, uniforms, insignia, wrecks 
 | Era | Your tanks | Enemy tanks | Your kit | Enemy infantry |
 | --- | --- | --- | --- | --- |
 | WW2 · 1944 | M4A3E8 Sherman, Cromwell Mk IV, Churchill Mk VII | Panzer IV Ausf. H, Panther Ausf. G, Tiger I | M1 Garand, M1A1 Bazooka | Kar98k riflemen, Panzerschreck teams |
+| Korea · 1951 | M26 Pershing, M46 Patton, M24 Chaffee | T-34-85 | M2 Carbine, M20 Super Bazooka | PVA riflemen with PPSh-41s, captured M20s |
 | Vietnam · 1968 | M48A3 Patton, Centurion Mk 5/1, M551 Sheridan | PT-76B, T-54A, T-55 | M16A1, M72 LAW | AK-47 riflemen, RPG-7 teams |
+| Cold War · 1985 | M1 Abrams, Leopard 2A4, M60A3 Patton | T-72A, T-64B, T-80B | M16A2, M47 Dragon (wire-guided) | AK-74 riflemen, RPG-7 teams |
 | Modern | M1A2 Abrams, Leopard 2A6, Challenger 2 | 2S25 Sprut-SD, T-72B3, T-80BVM, T-90M, T-14 Armata | M4A1, FGM-148 Javelin | AK-74M riflemen, RPG-7 teams |
 
 ## Controls
@@ -42,7 +44,7 @@ Each era is self-contained: tanks, infantry weapons, uniforms, insignia, wrecks 
 | W A S D | Move (Shift sprint, C crouch, Space jump) |
 | Mouse | Look and aim |
 | Left click | Fire |
-| Right click | Aim down sights; with the Javelin, hold on a tank to lock on |
+| Right click | Aim down sights (red dot or iron sights); with the Javelin, hold near a tank to lock on; with the Dragon, keep the sight on the tank until impact |
 | 1 / 2 or Q | Rifle or anti-tank launcher |
 | R | Reload |
 
@@ -55,5 +57,6 @@ Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons
 - Eighteen procedurally modelled tanks with animated tracks, crews, period insignia and paint
 - Ballistic gunnery, ricochets, armour zones, tank cook-offs, splash damage and tracers
 - Infantry squads with riflemen and anti-tank gunners, an allied fireteam, and tanks that hunt infantry with their machine guns
-- A Javelin that locks on and flies a top-attack profile; unguided LAW and Bazooka
+- A Javelin that locks on and flies a top-attack profile, a wire-guided Dragon, and unguided LAW and Bazookas
+- Tanks can't enter the lake; infantry can wade the shallows
 - Low, High and Ultra graphics presets
