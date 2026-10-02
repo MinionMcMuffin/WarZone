@@ -142,6 +142,9 @@ button.cta { pointer-events: auto; font-family: var(--f-display); font-weight: 9
 button.cta:hover { filter: brightness(1.1); }
 button.cta:active { transform: translateY(1px); }
 button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px; }
+button.ghost { pointer-events: auto; font-family: var(--f-body); font-weight: 700; font-size: 15px; letter-spacing: 0.16em; text-transform: uppercase; padding: 12px 20px; border: 1px solid var(--line); background: rgba(223,230,207,0.06); color: var(--hud); cursor: pointer; }
+button.ghost:hover { background: rgba(223,230,207,0.14); }
+button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px; }
 .seg { display: inline-flex; border: 1px solid var(--line); }
 .seg button { font-family: var(--f-body); font-weight: 600; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; padding: 8px 12px; border: 0; background: transparent; color: var(--hud-dim); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--hud); color: var(--ink); }
@@ -328,6 +331,7 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
     <h2>PAUSED</h2>
     <div class="controls">
       <button class="cta" id="btnResume">RESUME</button>
+      <button class="ghost" id="btnMenu">Main menu</button>
       <div class="seg" role="group" aria-label="Graphics quality">
         <button id="pLow" data-q="low" aria-pressed="false">Low</button>
         <button id="pHigh" data-q="high" aria-pressed="true">High</button>
@@ -346,7 +350,7 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
       <div class="val" id="oWave">0</div><div class="val" id="oKills">0</div><div class="val" id="oScore">0</div>
     </div>
     <div class="fine" id="oBest"></div>
-    <div class="controls"><button class="cta" id="btnRetry">REDEPLOY</button></div>
+    <div class="controls"><button class="cta" id="btnRetry">REDEPLOY</button><button class="ghost" id="btnMenu2">Main menu</button></div>
   </div>
 </div>
 
@@ -4472,6 +4476,16 @@ function gameOver() {
 $('btnStart').addEventListener('click', startGame);
 $('btnRetry').addEventListener('click', startGame);
 $('btnResume').addEventListener('click', resumeGame);
+function returnToMenu() {
+  if (document.pointerLockElement) document.exitPointerLock();
+  game.mode = 'title'; clearTimeout(msgTimer); $('msg').classList.remove('show'); $('feed').innerHTML = '';
+  for (const a of [...dmgDirs.children]) a.remove();
+  mouse.fire = mouse.zoom = mouse.pressed = false; cam.zoomToggle = false; damageFx = 0; grade.uniforms.damage.value = 0; grade.uniforms.scope.value = 0;
+  vmPass.enabled = false; wasAlive = true;
+  resetWorld(); showTankChoice(); setScreen('title');
+}
+$('btnMenu').addEventListener('click', returnToMenu);
+$('btnMenu2').addEventListener('click', returnToMenu);
 
 // =====================================================================
 // Main loop
