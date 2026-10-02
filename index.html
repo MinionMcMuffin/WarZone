@@ -1995,7 +1995,17 @@ function buildDesign(o) {
   const T = (g, x, y, z) => { g.translate(x, y, z); return g; };
   const V = (pts) => pts.map(([a, b]) => new THREE.Vector2(a, b));
   const Lh = o.len, H = o.hullH, W = o.hullW, hl = Lh / 2;
-  const hull = new THREE.ExtrudeGeometry(new THREE.Shape(V([[-hl, 0.38], [hl - 0.3, 0.38], [hl + 0.35, 0.9], [hl - 0.95, H], [-hl + 0.1, H], [-hl - 0.15, H - 0.3]])), { depth: W, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2 });
+  // hull side profile by family: [glacis bottom z, y, glacis top z, y] drives where add-on armour sits
+  const PROFILES = {
+    std: [[-hl, 0.38], [hl - 0.3, 0.38], [hl + 0.35, 0.9], [hl - 0.95, H], [-hl + 0.1, H], [-hl - 0.15, H - 0.3]],
+    boxy: [[-hl, 0.38], [hl - 0.25, 0.38], [hl + 0.15, 0.78], [hl + 0.2, H], [-hl + 0.05, H], [-hl - 0.08, H - 0.15]], // Tiger: vertical slab front
+    steep: [[-hl, 0.38], [hl - 0.5, 0.38], [hl + 0.3, 0.62], [hl - 1.75, H], [-hl + 0.1, H], [-hl - 0.2, H - 0.45]], // Panther, T-34: long 60° glacis
+    sherman: [[-hl, 0.38], [hl - 0.55, 0.38], [hl + 0.2, 0.62], [hl + 0.28, 0.9], [hl - 1.35, H], [-hl + 0.1, H], [-hl - 0.15, H - 0.35]], // rounded transmission nose
+  };
+  const prof = PROFILES[o.hull || 'std'];
+  const gi = o.hull === 'sherman' ? 3 : 2, gz0 = prof[gi][0] - 0.1, gy0 = prof[gi][1] + 0.05, gz1 = prof[gi + 1][0] + 0.1, gy1 = prof[gi + 1][1] - 0.02;
+  const gAng = Math.atan2(gy1 - gy0, gz0 - gz1);
+  const hull = new THREE.ExtrudeGeometry(new THREE.Shape(V(prof)), { depth: W, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2 });
   hull.rotateY(-Math.PI / 2); hull.translate(W / 2, 0, 0);
   const hullCamo = [hull], hullDark = [], fy = H * 0.8;
   for (const sx of [-1, 1]) {
@@ -2007,14 +2017,14 @@ function buildDesign(o) {
     hullDark.push(T(new THREE.CylinderGeometry(0.07, 0.07, 0.3, 8).rotateX(Math.PI / 2), sx * 0.9, 0.55, hl + 0.25));
   }
   if (o.era) for (let r = 0; r < 3; r++) for (let c = -2; c <= 2; c++) {
-    const b = new THREE.BoxGeometry(0.42, 0.08, 0.34); b.rotateX(Math.atan2(H - 0.9, 1.3));
-    hullCamo.push(T(b, c * 0.45, lerp(0.95, H - 0.02, (r + 0.5) / 3) + 0.04, lerp(hl + 0.25, hl - 0.85, (r + 0.5) / 3)));
+    const b = new THREE.BoxGeometry(0.42, 0.08, 0.34); b.rotateX(gAng);
+    hullCamo.push(T(b, c * 0.45, lerp(gy0, gy1, (r + 0.5) / 3) + 0.04, lerp(gz0, gz1, (r + 0.5) / 3)));
   }
   if (o.spares) {
-    const th0 = Math.atan2(H - 0.9, 1.3);
+    const th0 = gAng;
     for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
       const g = SHOE_GEO.clone(); g.rotateY(Math.PI / 2); g.scale(0.9, 1, 0.9); g.rotateX(th0);
-      hullDark.push(T(g, (c - 1.5) * 0.3, lerp(0.98, H - 0.06, 0.3 + r * 0.32) + 0.05, lerp(hl + 0.25, hl - 0.85, 0.3 + r * 0.32)));
+      hullDark.push(T(g, (c - 1.5) * 0.3, lerp(gy0, gy1, 0.3 + r * 0.32) + 0.05, lerp(gz0, gz1, 0.3 + r * 0.32)));
     }
   }
   if (o.drums) for (const x of [-0.62, 0.62]) hullCamo.push(T(new THREE.CylinderGeometry(0.3, 0.3, 1.15, 14).rotateZ(Math.PI / 2), x, H + 0.28, -hl + 0.25));
@@ -2079,7 +2089,7 @@ function buildDesign(o) {
     belt: beltGeometry(bl, br, 0.64, 0.1, 200, sag), wheel, sprocket: TANK_GEO.sprocket, roller: TANK_GEO.roller, antenna: TANK_GEO.antenna,
     L: {
       turret: [0, H, o.tZ], pivot: [0, th * 0.55, front], muzzleZ: GL + 0.5, coax: [0.33, 0.03, 0.45], sight: [tw * 0.22, th + 0.62, front - 0.2], beltY,
-      wheel: { n: o.wheels, start: -span / 2, step: span / (o.wheels - 1), r: wr, y: 0.1 + wr }, sprocket: { z: -(bl / 2 - br), y: beltY, r: br - 0.03 }, idler: { z: bl / 2 - br, y: beltY, r: br - 0.06 },
+      wheel: { n: o.wheels, start: -span / 2, step: span / (o.wheels - 1), r: wr, y: 0.1 + wr, inter: !!o.interleave }, sprocket: { z: -(bl / 2 - br), y: beltY, r: br - 0.03 }, idler: { z: bl / 2 - br, y: beltY, r: br - 0.06 },
       rollers: { y: beltY + br - 0.16, zs: o.noRollers ? [] : [-1.5, 0, 1.5], r: 0.11 }, antennas: [[tw * 0.35, -tl * 0.45]], belt: { len: bl, r: br, thick: 0.1, sag },
       decal: [sideX, th * 0.5, -tl * 0.18, Math.PI / 2], crew: cup ? [cup[0], cup[1] + 0.22 - 1.05, cup[2]] : null, jerry: { y: H + 0.25, pts: [[1.72, -hl + 0.5], [-1.72, -hl + 0.5]] },
     },
@@ -2097,14 +2107,14 @@ const DESIGNS = {
   m48: buildDesign({ spares: true, old: true, len: 6.9, hullW: 2.4, hullH: 1.45, turret: 'dome', tW: 3.0, tL: 3.6, tH: 0.95, tZ: 0.1, gunLen: 4.6, gunR: 0.085, wheels: 6, wheelR: 0.4, brake: true }),
   centurion: buildDesign({ old: true, len: 7.4, hullW: 2.4, hullH: 1.5, skirts: true, turret: 'box', tW: 2.9, tL: 3.3, tH: 0.9, tZ: 0.0, gunLen: 5.0, gunR: 0.08, wheels: 6, wheelR: 0.4 }),
   sheridan: buildDesign({ old: true, len: 6.1, hullW: 2.3, hullH: 1.3, turret: 'box', tW: 2.4, tL: 2.6, tH: 0.8, tZ: 0.1, gunLen: 2.2, gunR: 0.14, wheels: 5, wheelR: 0.42 }),
-  pt76: buildDesign({ noRollers: true, old: true, len: 6.9, hullW: 2.6, hullH: 1.35, turret: 'dome', tW: 2.4, tL: 2.4, tH: 0.6, tZ: 0.8, gunLen: 3.5, gunR: 0.065, wheels: 6, wheelR: 0.36, brake: true }),
-  t54: buildDesign({ noRollers: true, spares: true, old: true, len: 6.4, hullW: 2.3, hullH: 1.3, drums: true, turret: 'dome', tW: 3.0, tL: 3.0, tH: 0.9, tZ: 0.5, gunLen: 4.5, gunR: 0.08, wheels: 5, wheelR: 0.42 }),
-  t55: buildDesign({ noRollers: true, spares: true, old: true, len: 6.5, hullW: 2.3, hullH: 1.3, drums: true, turret: 'dome', tW: 3.05, tL: 3.05, tH: 0.92, tZ: 0.5, gunLen: 4.7, gunR: 0.08, wheels: 5, wheelR: 0.43 }),
+  pt76: buildDesign({ hull: 'boxy', noRollers: true, old: true, len: 6.9, hullW: 2.6, hullH: 1.35, turret: 'dome', tW: 2.4, tL: 2.4, tH: 0.6, tZ: 0.8, gunLen: 3.5, gunR: 0.065, wheels: 6, wheelR: 0.36, brake: true }),
+  t54: buildDesign({ hull: 'steep', noRollers: true, spares: true, old: true, len: 6.4, hullW: 2.3, hullH: 1.3, drums: true, turret: 'dome', tW: 3.0, tL: 3.0, tH: 0.9, tZ: 0.5, gunLen: 4.5, gunR: 0.08, wheels: 5, wheelR: 0.42 }),
+  t55: buildDesign({ hull: 'steep', noRollers: true, spares: true, old: true, len: 6.5, hullW: 2.3, hullH: 1.3, drums: true, turret: 'dome', tW: 3.05, tL: 3.05, tH: 0.92, tZ: 0.5, gunLen: 4.7, gunR: 0.08, wheels: 5, wheelR: 0.43 }),
   // Korea, 1951
   pershing: buildDesign({ old: true, len: 6.5, hullW: 2.4, hullH: 1.5, turret: 'box', tW: 2.6, tL: 3.0, tH: 0.9, tZ: 0.2, gunLen: 4.6, gunR: 0.08, wheels: 6, wheelR: 0.36, brake: true }),
   m46: buildDesign({ old: true, len: 6.9, hullW: 2.45, hullH: 1.55, turret: 'box', tW: 2.75, tL: 3.2, tH: 0.95, tZ: 0.15, gunLen: 4.7, gunR: 0.085, wheels: 6, wheelR: 0.38, brake: true }),
   chaffee: buildDesign({ old: true, len: 5.4, hullW: 2.2, hullH: 1.35, turret: 'dome', tW: 2.2, tL: 2.4, tH: 0.75, tZ: 0.2, gunLen: 3.2, gunR: 0.06, wheels: 5, wheelR: 0.34 }),
-  t3485: buildDesign({ noRollers: true, spares: true, old: true, len: 6.0, hullW: 2.3, hullH: 1.45, turret: 'box', tW: 2.5, tL: 2.9, tH: 0.85, tZ: 0.5, gunLen: 4.4, gunR: 0.07, wheels: 5, wheelR: 0.42 }),
+  t3485: buildDesign({ hull: 'steep', noRollers: true, spares: true, old: true, len: 6.0, hullW: 2.3, hullH: 1.45, turret: 'box', tW: 2.5, tL: 2.9, tH: 0.85, tZ: 0.5, gunLen: 4.4, gunR: 0.07, wheels: 5, wheelR: 0.42 }),
   // Cold War, 1985
   m60: buildDesign({ old: true, len: 6.9, hullW: 2.4, hullH: 1.5, turret: 'dome', tW: 3.1, tL: 3.8, tH: 1.05, tZ: 0.0, gunLen: 5.0, gunR: 0.085, wheels: 6, wheelR: 0.38 }),
   leo2a4: buildDesign({ len: 7.2, hullW: 2.35, hullH: 1.38, skirts: true, turret: 'box', tW: 3.1, tL: 3.7, tH: 0.82, tZ: -0.3, gunLen: 5.0, gunR: 0.1, wheels: 7, wheelR: 0.36 }),
@@ -2112,12 +2122,12 @@ const DESIGNS = {
   t64b: buildDesign({ spares: true, len: 6.6, hullW: 2.2, hullH: 1.18, skirts: true, turret: 'dome', tW: 3.1, tL: 3.4, tH: 0.82, tZ: 0.3, gunLen: 5.6, gunR: 0.09, wheels: 6, wheelR: 0.3 }),
   t72a: buildDesign({ spares: true, len: 6.9, hullW: 2.3, hullH: 1.22, drums: true, turret: 'dome', tW: 3.2, tL: 3.6, tH: 0.88, tZ: 0.25, gunLen: 5.6, gunR: 0.09, wheels: 6, wheelR: 0.42 }),
   // WW2, 1944
-  sherman: buildDesign({ spares: true, old: true, len: 6.0, hullW: 2.3, hullH: 1.75, turret: 'dome', tW: 2.5, tL: 2.7, tH: 0.85, tZ: 0.1, gunLen: 3.9, gunR: 0.075, wheels: 6, wheelR: 0.3, brake: true }),
-  cromwell: buildDesign({ old: true, len: 6.3, hullW: 2.3, hullH: 1.5, turret: 'box', tW: 2.3, tL: 2.4, tH: 0.85, tZ: 0.2, gunLen: 3.7, gunR: 0.075, wheels: 5, wheelR: 0.42 }),
-  churchill: buildDesign({ old: true, len: 7.4, hullW: 2.4, hullH: 1.65, skirts: true, turret: 'box', tW: 2.4, tL: 2.5, tH: 0.9, tZ: 0.6, gunLen: 3.2, gunR: 0.075, wheels: 9, wheelR: 0.24 }),
-  pz4: buildDesign({ spares: true, old: true, len: 5.9, hullW: 2.2, hullH: 1.55, skirts: true, turret: 'box', tW: 2.2, tL: 2.6, tH: 0.9, tZ: 0.3, gunLen: 4.3, gunR: 0.065, wheels: 8, wheelR: 0.26, brake: true }),
-  panther: buildDesign({ noRollers: true, old: true, len: 6.9, hullW: 2.4, hullH: 1.6, skirts: true, turret: 'box', tW: 2.4, tL: 2.9, tH: 0.95, tZ: 0.2, gunLen: 5.4, gunR: 0.065, wheels: 8, wheelR: 0.4, brake: true }),
-  tiger: buildDesign({ noRollers: true, old: true, len: 6.4, hullW: 2.6, hullH: 1.75, turret: 'box', tW: 2.8, tL: 3.0, tH: 1.0, tZ: 0.1, gunLen: 4.9, gunR: 0.085, wheels: 8, wheelR: 0.44, brake: true }),
+  sherman: buildDesign({ hull: 'sherman', spares: true, old: true, len: 6.0, hullW: 2.3, hullH: 1.75, turret: 'dome', tW: 2.5, tL: 2.7, tH: 0.85, tZ: 0.1, gunLen: 3.9, gunR: 0.075, wheels: 6, wheelR: 0.3, brake: true }),
+  cromwell: buildDesign({ hull: 'boxy', old: true, len: 6.3, hullW: 2.3, hullH: 1.5, turret: 'box', tW: 2.3, tL: 2.4, tH: 0.85, tZ: 0.2, gunLen: 3.7, gunR: 0.075, wheels: 5, wheelR: 0.42 }),
+  churchill: buildDesign({ hull: 'boxy', old: true, len: 7.4, hullW: 2.4, hullH: 1.65, skirts: true, turret: 'box', tW: 2.4, tL: 2.5, tH: 0.9, tZ: 0.6, gunLen: 3.2, gunR: 0.075, wheels: 9, wheelR: 0.24 }),
+  pz4: buildDesign({ hull: 'boxy', spares: true, old: true, len: 5.9, hullW: 2.2, hullH: 1.55, skirts: true, turret: 'box', tW: 2.2, tL: 2.6, tH: 0.9, tZ: 0.3, gunLen: 4.3, gunR: 0.065, wheels: 8, wheelR: 0.26, brake: true }),
+  panther: buildDesign({ hull: 'steep', interleave: true, noRollers: true, old: true, len: 6.9, hullW: 2.4, hullH: 1.6, skirts: true, turret: 'box', tW: 2.4, tL: 2.9, tH: 0.95, tZ: 0.2, gunLen: 5.4, gunR: 0.065, wheels: 8, wheelR: 0.4, brake: true }),
+  tiger: buildDesign({ hull: 'boxy', interleave: true, noRollers: true, old: true, len: 6.4, hullW: 2.6, hullH: 1.75, turret: 'box', tW: 2.8, tL: 3.0, tH: 1.0, tZ: 0.1, gunLen: 4.9, gunR: 0.085, wheels: 8, wheelR: 0.44, brake: true }),
 };
 for (const k of ['leopard', 'challenger', 't80', 't90', 't14', 'sprut', 'm48', 'centurion', 'sheridan', 'pt76', 't54', 't55', 'sherman', 'cromwell', 'churchill', 'pz4', 'panther', 'tiger', 'pershing', 'm46', 'chaffee', 't3485', 'm60', 'leo2a4', 't80b', 't64b', 't72a']) for (const g of ['hullCamo', 'turCamo']) worldUV(DESIGNS[k][g], 0.22);
 
@@ -2273,7 +2283,7 @@ function buildTankVisual(scheme, design, team, isPlayer, mark) {
     layShoes(tr, 0);
     tracks.push(tr);
     const W = L.wheel;
-    for (let i = 0; i < W.n; i++) { const w = mk(G.wheel, wheelMat); w.position.set(sx * 1.55, W.y, W.start + i * W.step); wheels.push({ m: w, r: W.r }); }
+    for (let i = 0; i < W.n; i++) { const w = mk(G.wheel, wheelMat); w.position.set(sx * 1.55 + (W.inter ? (i % 2 ? 0.1 : -0.1) * sx : 0), W.y, W.start + i * W.step); wheels.push({ m: w, r: W.r }); }
     const sp = mk(G.sprocket, darkMetal); sp.position.set(sx * 1.55, L.sprocket.y, L.sprocket.z); wheels.push({ m: sp, r: L.sprocket.r });
     const id = mk(G.wheel, wheelMat); id.position.set(sx * 1.55, L.idler.y, L.idler.z); wheels.push({ m: id, r: L.idler.r });
     for (const z of L.rollers.zs) { const r = mk(G.roller, wheelMat); r.position.set(sx * 1.55, L.rollers.y, z); wheels.push({ m: r, r: L.rollers.r }); }
