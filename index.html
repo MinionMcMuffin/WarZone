@@ -128,6 +128,8 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
 .seg { display: inline-flex; border: 1px solid var(--line); }
 .seg button { font-family: var(--f-body); font-weight: 600; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; padding: 8px 12px; border: 0; background: transparent; color: var(--hud-dim); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--hud); color: var(--ink); }
+.pick { display: grid; gap: 8px; }
+.tanksel { flex-wrap: wrap; }
 .stats { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 28px; justify-content: start; }
 .stats .val { font-family: var(--f-mono); font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .fine { font-size: 13px; color: var(--hud-dim); letter-spacing: 0.04em; }
@@ -212,7 +214,7 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
   </div>
 
   <div id="status">
-    <div class="row"><span class="label">Hull integrity</span><span class="num" id="vHp">100%</span></div>
+    <div class="row"><span class="label" id="vTank">M1A2 Abrams</span><span class="num" id="vHp">100%</span></div>
     <div id="hpBar"></div>
     <div class="row">
       <div><span class="big" id="vSpeed">0</span><span class="unit">KM/H</span></div>
@@ -245,7 +247,7 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
   <div class="slab">
     <div class="eyebrow">Sector 7 · Valley of Orsk · 18:40 local</div>
     <h1>WAR<br>ZONE</h1>
-    <p class="brief">You lead a platoon of four main battle tanks holding the valley road. Enemy light tanks, T-72s and heavy tanks are coming over the ridges in waves. Hold the village, keep your platoon alive, and make every round count.</p>
+    <p class="brief">You lead a NATO platoon of four main battle tanks holding the valley road. Sprut-SDs, T-72B3s, T-80BVMs, T-90Ms and T-14 Armatas are coming over the ridges in waves. Hold the village, keep your platoon alive, and make every round count.</p>
     <div class="keys">
       <kbd>W A S D</kbd><span>Drive and steer the hull</span>
       <kbd>Mouse</kbd><span>Traverse turret and aim the gun</span>
@@ -253,6 +255,11 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
       <kbd>Right click / Shift</kbd><span>Gunner's sight (zoom)</span>
       <kbd>Space</kbd><span>Coaxial machine gun</span>
       <kbd>Esc</kbd><span>Pause</span>
+    </div>
+    <div class="pick" role="group" aria-label="Choose your tank">
+      <div class="label">Choose your tank</div>
+      <div class="seg tanksel"><button data-tank="abrams" aria-pressed="true">M1A2 Abrams</button><button data-tank="leopard" aria-pressed="false">Leopard 2A6</button><button data-tank="challenger" aria-pressed="false">Challenger 2</button></div>
+      <div class="fine" id="tankBlurb"></div>
     </div>
     <div class="controls">
       <button class="cta" id="btnStart">DEPLOY</button>
@@ -393,9 +400,9 @@ function heightToNormalTex(h, size, strength) {
 // Renderer, scene, quality
 // =====================================================================
 const QUALITY = {
-  low:   { ao: 0, ext: 65, pr: 1, shadow: 1024, grass: 0.25, bloom: false, smaa: false },
-  high:  { ao: 1, ext: 95, pr: Math.min(devicePixelRatio, 1.5), shadow: 2048, grass: 0.6, bloom: true, smaa: true },
-  ultra: { ao: 2, ext: 140, pr: Math.min(devicePixelRatio, 2), shadow: 4096, grass: 1, bloom: true, smaa: true },
+  low:   { ng: 0, ao: 0, ext: 65, pr: 1, shadow: 1024, grass: 0.25, bloom: false, smaa: false },
+  high:  { ng: 0.45, ao: 1, ext: 95, pr: Math.min(devicePixelRatio, 1.5), shadow: 2048, grass: 0.6, bloom: true, smaa: true },
+  ultra: { ng: 1, ao: 2, ext: 140, pr: Math.min(devicePixelRatio, 2), shadow: 4096, grass: 1, bloom: true, smaa: true },
 };
 const isTouch = matchMedia('(pointer: coarse)').matches;
 let qualityName = isTouch ? 'low' : 'high';
@@ -1039,6 +1046,92 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
   }
   bush.count = bn; bush.castShadow = true; bush.receiveShadow = true;
   scene.add(bush);
+}
+
+// Dense near-field grass: real 3D blades in a square that travels with the camera.
+// Each clump keeps a fixed world spot and wraps around as you drive, reading height and a grass mask
+// from a heightmap texture, swaying in the wind and bending flat under tank tracks.
+let nearGrass = null;
+const NG_R = 40, NG_MAX = 90000;
+{
+  const W1 = SEG + 1, hm = new Float32Array(W1 * W1 * 2);
+  for (let j = 0; j < W1; j++) for (let i = 0; i < W1; i++) {
+    const k = j * W1 + i, x = -HALF + i * CELL, z = -HALF + j * CELL;
+    hm[k * 2] = HEIGHTS[k];
+    const r = Math.hypot(x, z);
+    hm[k * 2 + 1] = r > ARENA + 120 ? 0 : smoothstep(3.5, 6, roadDist(x, z)) * (inWater(x, z) ? 0 : 1) * smoothstep(0.8, 0.88, terrainNormal(x, z).y) * smoothstep(14, 24, Math.hypot(x - VILLAGE.x, z - VILLAGE.y));
+  }
+  const hmTex = new THREE.DataTexture(hm, W1, W1, THREE.RGFormat, THREE.FloatType);
+  hmTex.minFilter = hmTex.magFilter = THREE.NearestFilter; hmTex.needsUpdate = true;
+  // a clump of three curved, tapered blades
+  const pos = [], col = [], idx = [];
+  const base = new THREE.Color(0x2c4a16), tip = new THREE.Color(0x9cbf52);
+  for (let b = 0; b < 3; b++) {
+    const a = b / 3 * Math.PI * 2 + 0.4, ox = Math.cos(a) * 0.06, oz = Math.sin(a) * 0.06, h = 0.45 + b * 0.12, w = 0.045, lean = 0.12 + b * 0.05;
+    const v0 = pos.length / 3;
+    for (let k = 0; k <= 3; k++) {
+      const t = k / 3, ww = w * (1 - t * 0.85), y = h * t, off = lean * t * t;
+      const px = ox + Math.cos(a) * off, pz = oz + Math.sin(a) * off;
+      const sx = -Math.sin(a) * ww, sz = Math.cos(a) * ww;
+      pos.push(px - sx, y, pz - sz, px + sx, y, pz + sz);
+      const c = base.clone().lerp(tip, t); col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+    }
+    for (let k = 0; k < 3; k++) { const q = v0 + k * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
+  }
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  g.setIndex(idx);
+  const off = new Float32Array(NG_MAX * 2), rnd = new Float32Array(NG_MAX * 4), rg = mulberry32(77);
+  for (let i = 0; i < NG_MAX; i++) { off[i * 2] = (rg() * 2 - 1) * NG_R; off[i * 2 + 1] = (rg() * 2 - 1) * NG_R; rnd.set([rg() * 6.28, 0.7 + rg() * 0.7, rg(), rg() * 6.28], i * 4); }
+  g.setAttribute('aOff', new THREE.InstancedBufferAttribute(off, 2));
+  g.setAttribute('aRnd', new THREE.InstancedBufferAttribute(rnd, 4));
+  g.instanceCount = NG_MAX;
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.8 });
+  const tankU = { value: Array.from({ length: 10 }, () => new THREE.Vector4(0, 0, 0, 0)) };
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, { uTime: windUniform, uHM: { value: hmTex }, uTanks: tankU });
+    sh.vertexShader = `uniform float uTime; uniform sampler2D uHM; uniform vec4 uTanks[10];
+      attribute vec2 aOff; attribute vec4 aRnd; varying float vTint;
+      vec2 hmAt(vec2 c) { return texture2D(uHM, (clamp(c, 0.0, ${SEG.toFixed(1)}) + 0.5) / ${(SEG + 1).toFixed(1)}).rg; }
+      vec2 sampleHM(vec2 p) {
+        vec2 f = (p + ${HALF.toFixed(1)}) / ${CELL.toFixed(1)}, i = floor(f), t = f - i;
+        return mix(mix(hmAt(i), hmAt(i + vec2(1.0, 0.0)), t.x), mix(hmAt(i + vec2(0.0, 1.0)), hmAt(i + vec2(1.0, 1.0)), t.x), t.y);
+      }
+      ` + sh.vertexShader.replace('#include <begin_vertex>', `
+      vec3 transformed = vec3(position);
+      vec2 cxz = cameraPosition.xz;
+      vec2 wxz = cxz + mod(aOff - cxz + ${NG_R.toFixed(1)}, ${(2 * NG_R).toFixed(1)}) - ${NG_R.toFixed(1)};
+      float fade = 1.0 - smoothstep(${(NG_R * 0.55).toFixed(1)}, ${(NG_R * 0.95).toFixed(1)}, length(wxz - cxz));
+      vec2 hmv = sampleHM(wxz);
+      float sc = aRnd.y * fade * smoothstep(0.35, 0.8, hmv.y);
+      float c = cos(aRnd.x), s = sin(aRnd.x);
+      vec3 p = transformed * sc;
+      p.xz = mat2(c, -s, s, c) * p.xz;
+      float h01 = clamp(position.y / 0.7, 0.0, 1.0);
+      float w = sin(uTime * 1.9 + wxz.x * 0.21 + wxz.y * 0.13) + 0.5 * sin(uTime * 3.7 + wxz.x * 0.7 + aRnd.w);
+      p.x += w * 0.1 * h01 * h01 * sc; p.z += w * 0.05 * h01 * h01 * sc;
+      for (int i = 0; i < 10; i++) {
+        vec2 d = wxz - uTanks[i].xy; float dd = length(d);
+        float k = (1.0 - smoothstep(uTanks[i].z * 0.7, uTanks[i].z, dd)) * uTanks[i].w;
+        p.y *= 1.0 - 0.8 * k; p.xz += (d / max(dd, 0.01)) * k * h01 * 0.35 * sc;
+      }
+      transformed = p + vec3(wxz.x, hmv.x - 0.02, wxz.y);
+      vTint = aRnd.z;`);
+    sh.fragmentShader = 'varying float vTint;\n' + sh.fragmentShader
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= mix(vec3(0.85, 1.0, 0.75), vec3(1.25, 1.12, 0.7), vTint * vTint);')
+      .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''));
+  };
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.frustumCulled = false; mesh.receiveShadow = true;
+  scene.add(mesh);
+  nearGrass = { mesh, geo: g, tankU };
+}
+function updateNearGrass() {
+  if (!nearGrass.mesh.visible) return;
+  const list = tanks.filter((t) => t.v.root.parent).sort((a, b) => a.pos.distanceToSquared(camera.position) - b.pos.distanceToSquared(camera.position));
+  nearGrass.tankU.value.forEach((v, i) => { const t = list[i]; if (t) v.set(t.pos.x, t.pos.z, 4.6 * t.size, 1); else v.set(0, 0, 0, 0); });
 }
 
 // =====================================================================
@@ -1763,6 +1856,101 @@ const skinMat = new THREE.MeshStandardMaterial({ color: 0xc69a78, roughness: 0.7
 const CREW_GEO = { body: new THREE.CapsuleGeometry(0.17, 0.26, 4, 10).translate(0, 1.2, 0), head: new THREE.SphereGeometry(0.105, 14, 10).translate(0, 1.5, 0.01), helmet: new THREE.SphereGeometry(0.135, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55).scale(1, 0.9, 1.08).translate(0, 1.53, 0), arms: merge([new THREE.CapsuleGeometry(0.055, 0.28, 3, 6).rotateZ(1.1).translate(0.22, 1.2, 0.12), new THREE.CapsuleGeometry(0.055, 0.28, 3, 6).rotateZ(-1.1).translate(-0.22, 1.2, 0.12)]) };
 const JERRY_GEO = merge([new THREE.BoxGeometry(0.17, 0.46, 0.33), new THREE.BoxGeometry(0.05, 0.06, 0.2).translate(0, 0.26, 0)]);
 let decalSeq = 11;
+TANK_GEO.L.crew = [-0.62, 0, -0.55];
+TANK_GEO.L.jerry = { y: 1.4, pts: [[1.72, -3.0], [1.72, -2.62], [-1.72, -3.0]] };
+
+// Parametric generator for the rest of the roster: hull, running gear, turret family, gun and fittings
+function buildDesign(o) {
+  const T = (g, x, y, z) => { g.translate(x, y, z); return g; };
+  const V = (pts) => pts.map(([a, b]) => new THREE.Vector2(a, b));
+  const Lh = o.len, H = o.hullH, W = o.hullW, hl = Lh / 2;
+  const hull = new THREE.ExtrudeGeometry(new THREE.Shape(V([[-hl, 0.38], [hl - 0.3, 0.38], [hl + 0.35, 0.9], [hl - 0.95, H], [-hl + 0.1, H], [-hl - 0.15, H - 0.3]])), { depth: W, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2 });
+  hull.rotateY(-Math.PI / 2); hull.translate(W / 2, 0, 0);
+  const hullCamo = [hull], hullDark = [], fy = H * 0.8;
+  for (const sx of [-1, 1]) {
+    hullCamo.push(T(new THREE.BoxGeometry(0.95, 0.06, Lh + 0.3), sx * 1.6, fy, 0.05));
+    if (o.skirts) hullCamo.push(T(new THREE.BoxGeometry(0.08, 0.62, Lh - 0.3), sx * 1.97, fy - 0.3, 0.1));
+    else hullCamo.push(T(new THREE.BoxGeometry(0.05, 0.3, Lh - 1.2), sx * 2.0, fy - 0.14, 0.3));
+    for (const z of [-Lh * 0.32, Lh * 0.12]) hullCamo.push(T(new THREE.BoxGeometry(0.55, 0.32, 0.9), sx * 1.64, fy + 0.19, z));
+    hullDark.push(T(new THREE.CylinderGeometry(0.03, 0.03, Lh * 0.7, 5).rotateX(Math.PI / 2), sx * (W / 2 + 0.06), H + 0.04, -0.4));
+    hullDark.push(T(new THREE.CylinderGeometry(0.07, 0.07, 0.3, 8).rotateX(Math.PI / 2), sx * 0.9, 0.55, hl + 0.25));
+  }
+  if (o.era) for (let r = 0; r < 3; r++) for (let c = -2; c <= 2; c++) {
+    const b = new THREE.BoxGeometry(0.42, 0.08, 0.34); b.rotateX(Math.atan2(H - 0.9, 1.3));
+    hullCamo.push(T(b, c * 0.45, lerp(0.95, H - 0.02, (r + 0.5) / 3) + 0.04, lerp(hl + 0.25, hl - 0.85, (r + 0.5) / 3)));
+  }
+  if (o.drums) for (const x of [-0.62, 0.62]) hullCamo.push(T(new THREE.CylinderGeometry(0.3, 0.3, 1.15, 14).rotateZ(Math.PI / 2), x, H + 0.28, -hl + 0.25));
+  for (let i = 0; i < 5; i++) hullDark.push(T(new THREE.BoxGeometry(W * 0.8, 0.04, 0.1), 0, H + 0.03, -hl + 0.6 + i * 0.22));
+  const lights = [-1, 1].map((sx) => T(new THREE.CylinderGeometry(0.09, 0.09, 0.1, 10).rotateX(Math.PI / 2), sx * 1.5, fy + 0.12, hl + 0.2));
+
+  // turret families
+  const tw = o.tW, tl = o.tL, th = o.tH;
+  let front, turCamo = [], turDark = [T(new THREE.CylinderGeometry(1.1, 1.1, 0.14, 24), 0, 0, 0)];
+  if (o.turret === 'dome') {
+    const sc = tw / 3.2;
+    const dome = new THREE.LatheGeometry(V([[0.001, th], [0.7 * sc, th * 0.96], [1.15 * sc, th * 0.84], [1.45 * sc, th * 0.6], [1.6 * sc, th * 0.36], [1.62 * sc, th * 0.14], [1.5 * sc, 0]]), 28);
+    dome.scale(1, 1, tl / tw); turCamo.push(dome); front = 1.6 * sc * tl / tw - 0.15;
+  } else {
+    const shapes = {
+      wedge: [[-tw / 2, -tl * 0.55], [tw / 2, -tl * 0.55], [tw / 2, tl * 0.1], [0.5, tl * 0.62], [0.36, tl * 0.4], [-0.36, tl * 0.4], [-0.5, tl * 0.62], [-tw / 2, tl * 0.1]],
+      box: [[-tw / 2, -tl * 0.5], [tw / 2, -tl * 0.5], [tw / 2, tl * 0.36], [tw / 2 - 0.35, tl * 0.5], [-tw / 2 + 0.35, tl * 0.5], [-tw / 2, tl * 0.36]],
+      angular: [[-tw / 2 + 0.15, -tl * 0.6], [tw / 2 - 0.15, -tl * 0.6], [tw / 2, -tl * 0.2], [tw / 2, tl * 0.1], [tw / 2 - 0.45, tl * 0.5], [-tw / 2 + 0.45, tl * 0.5], [-tw / 2, tl * 0.1], [-tw / 2, -tl * 0.2]],
+      armata: [[-tw / 2, -tl * 0.5], [tw / 2, -tl * 0.5], [tw / 2, tl * 0.18], [tw / 2 - 0.65, tl * 0.5], [-tw / 2 + 0.65, tl * 0.5], [-tw / 2, tl * 0.18]],
+    };
+    const bev = o.turret === 'armata' ? 0.14 : 0.07;
+    const tg = new THREE.ExtrudeGeometry(new THREE.Shape(V(shapes[o.turret].map(([x, z]) => [x, -z]))), { depth: th, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 2 });
+    tg.rotateX(-Math.PI / 2); tg.translate(0, bev, 0); turCamo.push(tg);
+    front = (o.turret === 'wedge' ? tl * 0.4 : tl * 0.5) - 0.05;
+    if (o.turret === 'wedge' || o.turret === 'box') { // bustle rack
+      turCamo.push(T(new THREE.BoxGeometry(tw * 0.85, 0.06, 0.06), 0, th + 0.12, -tl * 0.62), T(new THREE.BoxGeometry(tw * 0.85, 0.06, 0.06), 0, th * 0.5, -tl * 0.62));
+      for (const sx of [-0.42, -0.14, 0.14, 0.42]) turCamo.push(T(new THREE.BoxGeometry(0.06, th * 0.6, 0.06), sx * tw, th * 0.8, -tl * 0.62));
+    }
+    if (o.turret === 'angular') for (const sx of [-1, 1]) for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) { // ERA cheeks
+      const b = new THREE.BoxGeometry(0.34, 0.24, 0.12); b.rotateY(sx * 0.62);
+      turCamo.push(T(b, sx * (tw / 2 - 0.3 - c * 0.14), 0.2 + r * 0.28, tl * 0.5 - 0.05 - c * 0.12));
+    }
+  }
+  const cup = o.turret === 'armata' ? null : [-tw * 0.2, th, -tl * 0.12];
+  if (cup) { turCamo.push(T(new THREE.CylinderGeometry(0.36, 0.38, 0.22, 16), cup[0], cup[1] + 0.09, cup[2])); turDark.push(T(new THREE.CylinderGeometry(0.28, 0.28, 0.05, 14), cup[0], cup[1] + 0.22, cup[2])); }
+  else { turDark.push(T(new THREE.BoxGeometry(0.5, 0.35, 0.5), -0.5, th + 0.3, -0.4), T(new THREE.CylinderGeometry(0.04, 0.04, 0.9, 6).rotateX(Math.PI / 2), -0.5, th + 0.42, 0.2)); // remote weapon station
+    for (const sx of [-1, 1]) turDark.push(T(new THREE.BoxGeometry(0.22, 0.5, 0.22), sx * 0.75, th + 0.3, -tl * 0.3)); }
+  turCamo.push(T(new THREE.BoxGeometry(0.42, 0.36, 0.45), tw * 0.22, th + 0.18, front - 0.55)); // gunner's sight
+  for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) { const tb = new THREE.CylinderGeometry(0.06, 0.06, 0.32, 8); tb.rotateX(Math.PI / 2 - 0.45); tb.rotateY(sx * 0.5); turDark.push(T(tb, sx * (tw / 2 - 0.1), th * 0.6 + (i % 2) * 0.12, -i * 0.13)); }
+  const tarp = o.turret === 'armata' ? [T(new THREE.BoxGeometry(0.3, 0.2, 0.3), 0.6, th + 0.1, -tl * 0.35)] : [T(new THREE.CylinderGeometry(0.2, 0.2, tw * 0.6, 10).rotateZ(Math.PI / 2), 0, th * 0.6, -tl * 0.6)];
+  const glass = [T(new THREE.BoxGeometry(0.34, 0.2, 0.03), tw * 0.22, th + 0.2, front - 0.32)];
+  const mantlet = o.turret === 'dome' || o.turret === 'angular' ? merge([new THREE.CylinderGeometry(0.3, 0.3, 0.5, 16).rotateX(Math.PI / 2).translate(0, 0, 0.12), new THREE.BoxGeometry(0.5, 0.4, 0.3)]) : new THREE.BoxGeometry(0.9, 0.58, 0.5).translate(0, 0, 0.1);
+  const GL = o.gunLen, gr = o.gunR;
+  const gun = [T(new THREE.CylinderGeometry(gr * 0.92, gr * 1.1, GL, 16).rotateX(Math.PI / 2), 0, 0, GL / 2 + 0.4)];
+  for (let i = 0; i < 4; i++) gun.push(T(new THREE.CylinderGeometry(gr * 1.25, gr * 1.25, 0.05, 16).rotateX(Math.PI / 2), 0, 0, 1.0 + i * GL * 0.18));
+  gun.push(T(new THREE.CylinderGeometry(gr * 1.65, gr * 1.65, 0.6, 16).rotateX(Math.PI / 2), 0, 0, 0.4 + GL * 0.38));
+  if (o.brake) gun.push(T(new THREE.CylinderGeometry(gr * 1.6, gr * 1.6, 0.35, 12).rotateX(Math.PI / 2), 0, 0, GL + 0.3));
+  else gun.push(T(new THREE.CylinderGeometry(gr * 1.05, gr * 1.05, 0.12, 16).rotateX(Math.PI / 2), 0, 0, GL + 0.35));
+  // running gear
+  const wr = o.wheelR, br = wr + 0.08, bl = Lh, beltY = br + 0.05;
+  const span = bl - 2 * br - wr * 1.6;
+  const wheel = merge([new THREE.CylinderGeometry(wr, wr, 0.22, 22).rotateZ(Math.PI / 2), new THREE.CylinderGeometry(wr * 0.72, wr * 0.72, 0.27, 18).rotateZ(Math.PI / 2), new THREE.CylinderGeometry(wr * 0.3, wr * 0.36, 0.33, 10).rotateZ(Math.PI / 2)]);
+  const sideX = o.turret === 'dome' ? tw * 0.47 : tw / 2 + 0.08;
+  return {
+    hullCamo: merge(hullCamo), hullDark: merge(hullDark), lights: merge(lights), turCamo: merge(turCamo), turDark: merge(turDark), tarp: merge(tarp), glass: merge(glass), mantlet, gun: merge(gun),
+    belt: beltGeometry(bl, br, 0.64, 0.1), wheel, sprocket: TANK_GEO.sprocket, roller: TANK_GEO.roller, antenna: TANK_GEO.antenna,
+    L: {
+      turret: [0, H, o.tZ], pivot: [0, th * 0.55, front], muzzleZ: GL + 0.5, coax: [0.33, 0.03, 0.45], sight: [tw * 0.22, th + 0.62, front - 0.2], beltY,
+      wheel: { n: o.wheels, start: -span / 2, step: span / (o.wheels - 1), r: wr, y: 0.1 + wr }, sprocket: { z: -(bl / 2 - br), y: beltY, r: br - 0.03 }, idler: { z: bl / 2 - br, y: beltY, r: br - 0.06 },
+      rollers: { y: beltY + br - 0.16, zs: [-1.5, 0, 1.5], r: 0.11 }, antennas: [[tw * 0.35, -tl * 0.45]], belt: { len: bl, r: br, thick: 0.1 },
+      decal: [sideX, th * 0.5, -tl * 0.18, Math.PI / 2], crew: cup ? [cup[0], cup[1] + 0.22 - 1.05, cup[2]] : null, jerry: { y: H + 0.25, pts: [[1.72, -hl + 0.5], [-1.72, -hl + 0.5]] },
+    },
+  };
+}
+const DESIGNS = {
+  abrams: TANK_GEO, t72: TANK_GEO_E,
+  leopard: buildDesign({ len: 7.2, hullW: 2.35, hullH: 1.38, skirts: true, turret: 'wedge', tW: 3.1, tL: 3.9, tH: 0.78, tZ: -0.4, gunLen: 6.2, gunR: 0.1, wheels: 7, wheelR: 0.36 }),
+  challenger: buildDesign({ len: 7.5, hullW: 2.4, hullH: 1.42, skirts: true, turret: 'box', tW: 3.0, tL: 3.8, tH: 0.95, tZ: -0.3, gunLen: 5.6, gunR: 0.11, wheels: 6, wheelR: 0.4 }),
+  t80: buildDesign({ len: 6.9, hullW: 2.25, hullH: 1.22, skirts: true, era: true, turret: 'dome', tW: 3.2, tL: 3.5, tH: 0.86, tZ: 0.25, gunLen: 5.6, gunR: 0.09, wheels: 6, wheelR: 0.38 }),
+  t90: buildDesign({ len: 7.0, hullW: 2.3, hullH: 1.24, era: true, drums: true, turret: 'angular', tW: 3.1, tL: 3.6, tH: 0.82, tZ: 0.2, gunLen: 5.7, gunR: 0.09, wheels: 6, wheelR: 0.42 }),
+  t14: buildDesign({ len: 8.4, hullW: 2.45, hullH: 1.45, skirts: true, era: true, turret: 'armata', tW: 2.7, tL: 3.4, tH: 0.85, tZ: 0.0, gunLen: 6.3, gunR: 0.1, wheels: 7, wheelR: 0.4 }),
+  sprut: buildDesign({ len: 6.4, hullW: 2.2, hullH: 1.15, turret: 'dome', tW: 2.6, tL: 2.9, tH: 0.7, tZ: 0.1, gunLen: 6.0, gunR: 0.08, wheels: 7, wheelR: 0.3, brake: true }),
+};
+for (const k of ['leopard', 'challenger', 't80', 't90', 't14', 'sprut']) for (const g of ['hullCamo', 'turCamo']) worldUV(DESIGNS[k][g], 0.22);
 
 const SCHEMES = {
   player: { camo: camoTexture([0x76804a, 0x55603a, 0x3a3a2e, 0x968860], 101) },
@@ -1770,15 +1958,25 @@ const SCHEMES = {
   enemy: { camo: camoTexture([0xa8915f, 0x7f6a48, 0x5e4f3a, 0xbfa77a], 202) },
   light: { camo: camoTexture([0xc2b48c, 0x9c9070, 0x7a7058, 0xd8cca4], 303) },
   heavy: { camo: camoTexture([0x535a4c, 0x3e443a, 0x2c302a, 0x6a6f60], 404) },
+  leopard: { camo: camoTexture([0x4f5a3a, 0x3c3226, 0x22231e, 0x5d6844], 505) },
+  challenger: { camo: camoTexture([0x5a5f42, 0x4a4f36, 0x3c4030, 0x6a6e4e], 606) },
+  t80: { camo: camoTexture([0x5e6650, 0x4a5240, 0x353a2e, 0x707862], 707) },
+  t90: { camo: camoTexture([0x68723f, 0x4c5530, 0x8a7a50, 0x3a3e2a], 808) },
 };
-// Vehicle classes. Allies use your design; the opposing force fields light, main battle and heavy tanks.
+// The roster. NATO tanks fight with you; the opposing force fields five Soviet/Russian designs.
 const KINDS = {
-  player: { design: 'player', scheme: 'player', team: 'blue', hp: 100, maxF: 14, reload: 2.2, scale: 1, name: 'You' },
-  ally: { design: 'player', scheme: 'ally', team: 'blue', hp: 130, maxF: 11, reload: 4.2, scale: 1, dmg: 1, name: 'Allied tank' },
-  light: { design: 'enemy', scheme: 'light', team: 'red', hp: 60, maxF: 13.5, reload: 3.4, scale: 0.82, dmg: 0.7, name: 'Light tank' },
-  mbt: { design: 'enemy', scheme: 'enemy', team: 'red', hp: 100, maxF: 9, reload: 5, scale: 1, dmg: 1, name: 'T-72' },
-  heavy: { design: 'enemy', scheme: 'heavy', team: 'red', hp: 190, maxF: 6, reload: 6.2, scale: 1.18, dmg: 1.45, name: 'Heavy tank' },
+  abrams: { design: 'abrams', scheme: 'player', team: 'blue', hp: 115, maxF: 14, reload: 2.2, scale: 1, dmg: 1, name: 'M1A2 Abrams', blurb: 'Balanced. Thick armour, quick loader.' },
+  leopard: { design: 'leopard', scheme: 'leopard', team: 'blue', hp: 100, maxF: 16, reload: 2.0, scale: 1, dmg: 1.05, name: 'Leopard 2A6', blurb: 'Fastest and hardest-hitting L55 gun.' },
+  challenger: { design: 'challenger', scheme: 'challenger', team: 'blue', hp: 140, maxF: 12, reload: 2.5, scale: 1, dmg: 1, name: 'Challenger 2', blurb: 'Slowest, but the toughest armour.' },
+  sprut: { design: 'sprut', scheme: 'light', team: 'red', cls: 'light', hp: 55, maxF: 15, reload: 3.2, scale: 0.86, dmg: 0.7, pts: 0.7, name: '2S25 Sprut-SD' },
+  t72: { design: 't72', scheme: 'enemy', team: 'red', cls: 'mbt', hp: 100, maxF: 9, reload: 5, scale: 1, dmg: 1, pts: 1, name: 'T-72B3' },
+  t80: { design: 't80', scheme: 't80', team: 'red', cls: 'mbt', hp: 100, maxF: 12.5, reload: 4.6, scale: 1, dmg: 1, pts: 1.1, name: 'T-80BVM' },
+  t90: { design: 't90', scheme: 't90', team: 'red', cls: 'mbt', hp: 130, maxF: 9.5, reload: 4.4, scale: 1, dmg: 1.15, pts: 1.3, name: 'T-90M Proryv' },
+  t14: { design: 't14', scheme: 'heavy', team: 'red', cls: 'heavy', hp: 200, maxF: 8, reload: 5.4, scale: 1.05, dmg: 1.5, pts: 1.8, name: 'T-14 Armata' },
 };
+const BLUE_KINDS = ['abrams', 'leopard', 'challenger'];
+let playerKind = 'abrams';
+try { const k = localStorage.getItem('warzone.tank'); if (BLUE_KINDS.includes(k)) playerKind = k; } catch (e) { }
 const darkMetal = new THREE.MeshStandardMaterial({ color: 0x2a2b27, roughness: 0.55, metalness: 0.65 });
 const wheelMat = new THREE.MeshStandardMaterial({ color: 0x3d382f, roughness: 0.7, metalness: 0.4 });
 const blobMat = new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(0,0,0,0.8)'], [0.55, 'rgba(0,0,0,0.5)'], [1, 'rgba(0,0,0,0)']]), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
@@ -1813,8 +2011,8 @@ for (const k in SCHEMES) {
   };
 }
 
-function buildTankVisual(scheme, design) {
-  const G = design === 'enemy' ? TANK_GEO_E : TANK_GEO, L = G.L;
+function buildTankVisual(scheme, design, team, isPlayer) {
+  const G = DESIGNS[design], L = G.L;
   const camo = SCHEMES[scheme].mat;
   const root = new THREE.Group();
   const mk = (geo, mat, parent = root) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
@@ -1854,14 +2052,16 @@ function buildTankVisual(scheme, design) {
   const sight = new THREE.Object3D(); sight.position.set(...L.sight); turret.add(sight);
   // tactical number on both turret sides
   const extras = [];
-  const dm = numberDecal(design === 'enemy' ? String(200 + (decalSeq++ % 90)) : (scheme === 'player' ? 'A 11' : 'A ' + (decalSeq++ % 9 + 12)), design === 'enemy' ? '#e9e4d6' : '#e8e2c8');
+  const dm = numberDecal(team === 'red' ? String(200 + (decalSeq++ % 90)) : (isPlayer ? 'A 11' : 'A ' + (decalSeq++ % 9 + 12)), team === 'red' ? '#e9e4d6' : '#e8e2c8');
   for (const sgn of [-1, 1]) { const d = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), dm); const [x, y, z, ry] = L.decal; d.position.set(sgn * x, y, z); d.rotation.y = sgn * ry; turret.add(d); extras.push(d); }
-  if (design !== 'enemy') {
+  if (team === 'blue') {
     // tank commander standing in the open cupola
-    const crew = new THREE.Group(); crew.position.set(-0.62, 0, -0.55); turret.add(crew);
-    for (const [g, m] of [[CREW_GEO.body, crewMat], [CREW_GEO.head, skinMat], [CREW_GEO.helmet, crewMat], [CREW_GEO.arms, crewMat]]) mk(g, m, crew);
-    extras.push(crew);
-    for (const [x, z] of [[1.72, -3.0], [1.72, -2.62], [-1.72, -3.0]]) { const j = mk(JERRY_GEO, camo); j.position.set(x, 1.4, z); }
+    if (L.crew) {
+      const crew = new THREE.Group(); crew.position.set(...L.crew); turret.add(crew);
+      for (const [g, m] of [[CREW_GEO.body, crewMat], [CREW_GEO.head, skinMat], [CREW_GEO.helmet, crewMat], [CREW_GEO.arms, crewMat]]) mk(g, m, crew);
+      extras.push(crew);
+    }
+    for (const [x, z] of L.jerry.pts) { const j = mk(JERRY_GEO, camo); j.position.set(x, L.jerry.y, z); }
   }
   return { root, turret, gunPivot, barrel, muzzle, coax, sight, tracks, wheels, antennas, meshes, lamps, L, extras };
 }
@@ -1875,10 +2075,11 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const SHELL_SPEED = 330, GRAVITY = 9.81;
 
 class Tank {
-  constructor(isPlayer, x, z, heading, kind = isPlayer ? 'player' : 'mbt') {
+  constructor(isPlayer, x, z, heading, kind = isPlayer ? playerKind : 't72') {
     this.isPlayer = isPlayer;
     const K = this.K = KINDS[kind]; this.kind = kind; this.team = K.team; this.size = K.scale;
-    this.v = buildTankVisual(K.scheme, K.design);
+    this.role = isPlayer ? 'player' : K.team === 'blue' ? 'ally' : 'enemy';
+    this.v = buildTankVisual(!isPlayer && kind === 'abrams' ? 'ally' : K.scheme, K.design, K.team, isPlayer);
     this.v.root.scale.setScalar(K.scale);
     scene.add(this.v.root);
     this.pos = new THREE.Vector3(x, terrainHeight(x, z), z);
@@ -2259,8 +2460,8 @@ function impact(s, hit) {
         showHitmark();
         if (wasAlive && !tk.alive) onKill(tk); else feed(`Hit · ${tk.K.name} · ${zone}`, false);
       } else if (wasAlive && !tk.alive) {
-        if (tk.team === 'red') { game.score += 50 * game.wave; feed(`Allies destroyed a ${tk.K.name}`, false); }
-        else if (!tk.isPlayer) feed('Allied tank lost', true);
+        if (tk.team === 'red') { game.score += 50 * game.wave; feed(`${s.owner?.K?.name || 'Allies'} destroyed a ${tk.K.name}`, false); }
+        else if (!tk.isPlayer) feed(`${tk.K.name} lost`, true);
       }
       if (tk.isPlayer) onPlayerHit(s.owner, dmg);
     }
@@ -2484,10 +2685,20 @@ function applyQuality() {
   }
   grassMesh.count = Math.floor(grassMax * q.grass);
   flowerMesh.count = Math.floor(flowerMax * q.grass);
-  document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.q === qualityName)));
+  nearGrass.geo.instanceCount = Math.floor(NG_MAX * q.ng); nearGrass.mesh.visible = q.ng > 0;
+  document.querySelectorAll('.seg button[data-q]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.q === qualityName)));
   try { localStorage.setItem('warzone.quality', qualityName); } catch (e) { }
 }
-document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); qualityName = b.dataset.q; applyQuality(); }));
+document.querySelectorAll('.seg button[data-q]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); qualityName = b.dataset.q; applyQuality(); }));
+function showTankChoice() {
+  document.querySelectorAll('.tanksel button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tank === playerKind)));
+  const K = KINDS[playerKind]; $('tankBlurb').textContent = `${K.name}: ${K.blurb}`;
+}
+document.querySelectorAll('.tanksel button').forEach((b) => b.addEventListener('click', () => {
+  playerKind = b.dataset.tank; try { localStorage.setItem('warzone.tank', playerKind); } catch (e) { }
+  showTankChoice(); if (game.mode === 'title') resetWorld();
+}));
+showTankChoice();
 
 // =====================================================================
 // Scenery wrecks with smoke columns
@@ -2545,7 +2756,7 @@ function onPlayerHit(from, dmg) {
   }
 }
 function onKill(tk) {
-  game.kills++; const pts = Math.round(100 * game.wave * (tk.kind === 'heavy' ? 1.6 : tk.kind === 'light' ? 0.7 : 1)); game.score += pts;
+  game.kills++; const pts = Math.round(100 * game.wave * (tk.K.pts || 1)); game.score += pts;
   game.ammo = Math.min(60, game.ammo + 3);
   feed(`${tk.K.name} destroyed · +${pts}`, false);
   bigMsg('TARGET DESTROYED', null, 1.4);
@@ -2685,9 +2896,14 @@ if (isTouch) {
 // =====================================================================
 function newAI() { return { target: new THREE.Vector2(), retarget: 0, los: 0, stuck: 0, reverseT: 0, fireDelay: rr(1, 3), foe: null, foeT: 0 }; }
 function pickEnemyKind(w) {
-  const r = Math.random();
-  if (w >= 2 && r < Math.min(0.12 + w * 0.04, 0.35)) return 'heavy';
-  return r < 0.62 ? 'mbt' : 'light';
+  // later waves bring in newer, tougher tanks
+  const pool = [['t72', 5], ['sprut', 3]];
+  if (w >= 2) pool.push(['t80', 3]);
+  if (w >= 3) pool.push(['t90', 2 + w * 0.3]);
+  if (w >= 4) pool.push(['t14', 0.6 + w * 0.25]);
+  let r = Math.random() * pool.reduce((a, [, wt]) => a + wt, 0);
+  for (const [k, wt] of pool) { r -= wt; if (r <= 0) return k; }
+  return 't72';
 }
 function spawnEnemy() {
   const pt = player.tank;
@@ -2701,7 +2917,7 @@ function spawnEnemy() {
     t.ai = newAI();
     t.reloadTime = t.K.reload * Math.max(0.65, 1 - w * 0.05);
     t.reload = rr(2, 4);
-    t.spread = Math.max(0.006, 0.03 - w * 0.0025) * (kind === 'light' ? 1.3 : 1);
+    t.spread = Math.max(0.006, 0.03 - w * 0.0025) * (t.K.cls === 'light' ? 1.3 : 1);
     t.maxF = t.K.maxF + Math.min(w, 6) * 0.4;
     return t;
   }
@@ -2710,14 +2926,15 @@ const ALLY_SLOTS = [[-16, -14], [16, -14], [0, -30]];
 function spawnAlly(slot) {
   const pt = player.tank, [sx, sz] = ALLY_SLOTS[slot], h = pt.heading;
   const x = pt.pos.x + sx * Math.cos(h) + sz * Math.sin(h), z = pt.pos.z - sx * Math.sin(h) + sz * Math.cos(h);
-  const t = new Tank(false, x, z, h, 'ally');
+  const others = BLUE_KINDS.filter((k) => k !== playerKind);
+  const t = new Tank(false, x, z, h, slot < 2 ? others[slot] : playerKind);
   t.ai = newAI(); t.ai.slot = slot;
   t.spread = 0.01; t.reload = rr(1, 3);
   return t;
 }
 function reinforceAllies() {
   if (!player.tank?.alive) return;
-  const taken = new Set(tanks.filter((t) => t.kind === 'ally' && t.alive).map((t) => t.ai.slot));
+  const taken = new Set(tanks.filter((t) => t.role === 'ally' && t.alive).map((t) => t.ai.slot));
   let n = 0;
   for (let i = 0; i < ALLY_SLOTS.length; i++) if (!taken.has(i)) { spawnAlly(i); n++; }
   if (n) feed(`${n} allied tank${n > 1 ? 's' : ''} rejoined the platoon`, false);
@@ -2726,7 +2943,8 @@ function nextWave() {
   game.wave++;
   game.toSpawn = Math.min(3 + game.wave * 2, 18);
   game.spawnT = 1.5;
-  bigMsg(`WAVE ${game.wave}`, `${game.toSpawn} hostile tanks inbound`, 3);
+  const names = [...new Set(Array.from({ length: 6 }, () => KINDS[pickEnemyKind(game.wave)].name))].slice(0, 3).join(' · ');
+  bigMsg(`WAVE ${game.wave}`, `${game.toSpawn} hostile tanks inbound · ${names}`, 3.4);
 }
 function updateWaves(dt) {
   if (game.toSpawn > 0) {
@@ -3004,17 +3222,19 @@ function updateMarkers() {
       m._info.style.top = (bh / 2 + 6) + 'px';
     }
     m._hp.style.width = (e.hp / e.maxHp * 100) + '%';
-    m._d.textContent = Math.round(dist) + ' m';
+    m._d.textContent = `${e.K.name} · ${Math.round(dist)} m`;
     m.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
   }
   for (const [e, m] of markerMap) if (!seen.has(e)) { m.remove(); markerMap.delete(e); }
 }
 function updateHUD(dt) {
+  camera.updateMatrixWorld(); // project markers with this frame's camera, not last frame's
   const t = player.tank; if (!t) return;
   const hp = t.hp / t.maxHp, cells = Math.ceil(hp * 20);
   hpCells.forEach((c, i) => c.classList.toggle('off', i >= cells));
   hpBar.classList.toggle('warn', hp <= 0.5 && hp > 0.25); hpBar.classList.toggle('crit', hp <= 0.25);
   $('vHp').textContent = Math.ceil(hp * 100) + '%';
+  $('vTank').textContent = t.K.name + ' · hull';
   $('vSpeed').textContent = Math.round(Math.abs(t.speed) * 3.6);
   $('vGear').textContent = t.speed > 0.3 ? 'F' : t.speed < -0.3 ? 'R' : 'N';
   $('vHdg').textContent = String(Math.round(((-cam.yaw * 180 / Math.PI) % 360 + 360) % 360) % 360).padStart(3, '0');
@@ -3129,6 +3349,7 @@ function frame() {
       if (tr.fall >= Math.PI / 2 - 0.08) { fallingTrees.splice(i, 1); const tx = tr.x + Math.sin(tr.fallDir) * 5 * tr.s, tz = tr.z + Math.cos(tr.fallDir) * 5 * tr.s; for (let k = 0; k < 5; k++) particles.dust({ x: tx + rr(-2, 2), y: terrainHeight(tx, tz) + 0.5, z: tz + rr(-2, 2) }, 0.7); }
     }
     smokePool.update(simDt); firePool.update(simDt); sparkPool.update(simDt);
+    updateNearGrass();
     debris.update(simDt);
     trackMarks.update(simDt);
     for (const f of flashes) { f.t += simDt; f.l.intensity = f.t < f.dur ? f.peak * Math.pow(1 - f.t / f.dur, 2) : 0; }
@@ -3175,7 +3396,7 @@ applyQuality();
 $('loading').hidden = true;
 setScreen('title');
 requestAnimationFrame(frame);
-window.__warzone = { game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, aoPass, renderPass };
+window.__warzone = { game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, aoPass, renderPass, nearGrass };
 </script>
 </body>
 </html>
