@@ -1713,7 +1713,12 @@ const treadTex = canvasTex(128, (g, s) => {
   g.fillStyle = 'rgba(120,96,70,0.35)'; for (let i = 0; i < 40; i++) g.fillRect(Math.random() * s, Math.random() * s, 6, 3);
 });
 
-function beltGeometry(len, r, width, thick, N = 120) {
+function trackSag(z, len, r, S) {
+  if (!S) return 0;
+  const half = len / 2 - r, sn = Math.sin(Math.PI * (z - S.start) / S.step);
+  return (S.base + S.amp * sn * sn) * smoothstep(half + 0.05, half - 0.7, Math.abs(z));
+}
+function beltGeometry(len, r, width, thick, N = 200, S = null) {
   const L = len - 2 * r, P = 2 * L + 2 * Math.PI * r;
   const pos = [], nor = [], uv = [], idx = [];
   const faces = [[1, 0], [-1, 0], [0, 1], [0, -1]]; // outer, inner, +x side, -x side
@@ -1723,7 +1728,7 @@ function beltGeometry(len, r, width, thick, N = 120) {
       const s = k / N * P; let z, y, nz, ny;
       if (s < L) { z = -L / 2 + s; y = -r; nz = 0; ny = -1; }
       else if (s < L + Math.PI * r) { const t = -Math.PI / 2 + (s - L) / r; z = L / 2 + r * Math.cos(t); y = r * Math.sin(t); nz = Math.cos(t); ny = Math.sin(t); }
-      else if (s < 2 * L + Math.PI * r) { z = L / 2 - (s - L - Math.PI * r); y = r; nz = 0; ny = 1; }
+      else if (s < 2 * L + Math.PI * r) { z = L / 2 - (s - L - Math.PI * r); y = r - trackSag(z, len, r, S); nz = 0; ny = 1; }
       else { const t = Math.PI / 2 + (s - 2 * L - Math.PI * r) / r; z = -L / 2 + r * Math.cos(t); y = r * Math.sin(t); nz = Math.cos(t); ny = Math.sin(t); }
       const oz = z + nz * thick / 2, oy = y + ny * thick / 2, iz = z - nz * thick / 2, iy = y - ny * thick / 2;
       const u = s / 0.42;
@@ -1881,23 +1886,26 @@ const TANK_GEO_E = (() => {
   return g;
 })();
 for (const G of [TANK_GEO, TANK_GEO_E]) for (const k of ['hullCamo', 'turCamo']) worldUV(G[k], 0.22);
-TANK_GEO.L.belt = { len: 7.0, r: 0.45, thick: 0.1 }; TANK_GEO_E.L.belt = { len: 7.1, r: 0.5, thick: 0.1 };
+TANK_GEO.L.belt = { len: 7.0, r: 0.45, thick: 0.1, sag: { base: 0, amp: 0.045, step: 1.6, start: -1.6 } };
+TANK_GEO_E.L.belt = { len: 7.1, r: 0.5, thick: 0.1, sag: { base: 0, amp: 0.05, step: 1.5, start: -1.5 } };
+TANK_GEO.belt = beltGeometry(7.0, 0.45, 0.66, 0.1, 200, TANK_GEO.L.belt.sag);
+TANK_GEO_E.belt = beltGeometry(7.1, 0.5, 0.6, 0.1, 200, TANK_GEO_E.L.belt.sag);
 TANK_GEO.L.decal = [1.71, 0.42, -0.95, 1.668]; TANK_GEO_E.L.decal = [1.6, 0.42, -0.3, 1.57];
 // raised steel shoe with two grousers, laid on top of the belt so tracks read as real links
 const SHOE_GEO = merge([new THREE.BoxGeometry(0.66, 0.035, 0.27), new THREE.BoxGeometry(0.6, 0.05, 0.05).translate(0, 0.035, -0.07), new THREE.BoxGeometry(0.6, 0.05, 0.05).translate(0, 0.035, 0.07), new THREE.BoxGeometry(0.12, 0.08, 0.12).translate(0, -0.06, 0)]);
 const shoeMat = new THREE.MeshStandardMaterial({ color: 0x45423b, roughness: 0.5, metalness: 0.75, map: detailTex });
-function beltPoint(s, len, r) {
+function beltPoint(s, len, r, S) {
   const L = len - 2 * r, P = 2 * L + 2 * Math.PI * r; s = ((s % P) + P) % P;
   if (s < L) return [-L / 2 + s, -r, 0, -1];
   if (s < L + Math.PI * r) { const t = -Math.PI / 2 + (s - L) / r; return [L / 2 + r * Math.cos(t), r * Math.sin(t), Math.cos(t), Math.sin(t)]; }
-  if (s < 2 * L + Math.PI * r) return [L / 2 - (s - L - Math.PI * r), r, 0, 1];
+  if (s < 2 * L + Math.PI * r) { const z = L / 2 - (s - L - Math.PI * r); return [z, r - trackSag(z, len, r, S), 0, 1]; }
   const t = Math.PI / 2 + (s - 2 * L - Math.PI * r) / r; return [-L / 2 + r * Math.cos(t), r * Math.sin(t), Math.cos(t), Math.sin(t)];
 }
 const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new THREE.Vector3(), _ss = new THREE.Vector3(1, 1, 1), _sx = new THREE.Vector3(1, 0, 0);
 function layShoes(tr, dist) {
   const { len, r, thick } = tr.belt, n = tr.shoes.count, P = 2 * (len - 2 * r) + 2 * Math.PI * r;
   for (let i = 0; i < n; i++) {
-    const [z, y, nz, ny] = beltPoint(i * P / n - dist, len, r), off = thick / 2 + 0.02;
+    const [z, y, nz, ny] = beltPoint(i * P / n - dist, len, r, tr.belt.sag), off = thick / 2 + 0.02;
     _sp.set(0, y + ny * off, z + nz * off); _sq.setFromAxisAngle(_sx, Math.atan2(nz, ny));
     tr.shoes.setMatrixAt(i, _sm.compose(_sp, _sq, _ss));
   }
@@ -1961,6 +1969,13 @@ function buildDesign(o) {
     const b = new THREE.BoxGeometry(0.42, 0.08, 0.34); b.rotateX(Math.atan2(H - 0.9, 1.3));
     hullCamo.push(T(b, c * 0.45, lerp(0.95, H - 0.02, (r + 0.5) / 3) + 0.04, lerp(hl + 0.25, hl - 0.85, (r + 0.5) / 3)));
   }
+  if (o.spares) {
+    const th0 = Math.atan2(H - 0.9, 1.3);
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
+      const g = SHOE_GEO.clone(); g.rotateY(Math.PI / 2); g.scale(0.9, 1, 0.9); g.rotateX(th0);
+      hullDark.push(T(g, (c - 1.5) * 0.3, lerp(0.98, H - 0.06, 0.3 + r * 0.32) + 0.05, lerp(hl + 0.25, hl - 0.85, 0.3 + r * 0.32)));
+    }
+  }
   if (o.drums) for (const x of [-0.62, 0.62]) hullCamo.push(T(new THREE.CylinderGeometry(0.3, 0.3, 1.15, 14).rotateZ(Math.PI / 2), x, H + 0.28, -hl + 0.25));
   for (let i = 0; i < 5; i++) hullDark.push(T(new THREE.BoxGeometry(W * 0.8, 0.04, 0.1), 0, H + 0.03, -hl + 0.6 + i * 0.22));
   const lights = [-1, 1].map((sx) => T(new THREE.CylinderGeometry(0.09, 0.09, 0.1, 10).rotateX(Math.PI / 2), sx * 1.5, fy + 0.12, hl + 0.2));
@@ -1993,7 +2008,11 @@ function buildDesign(o) {
     }
   }
   const cup = o.turret === 'armata' ? null : [-tw * 0.2, th, -tl * 0.12];
-  if (cup) { turCamo.push(T(new THREE.CylinderGeometry(0.36, 0.38, 0.22, 16), cup[0], cup[1] + 0.09, cup[2])); turDark.push(T(new THREE.CylinderGeometry(0.28, 0.28, 0.05, 14), cup[0], cup[1] + 0.22, cup[2])); }
+  if (cup) {
+    turCamo.push(T(new THREE.CylinderGeometry(0.36, 0.38, 0.22, 16), cup[0], cup[1] + 0.09, cup[2])); turDark.push(T(new THREE.CylinderGeometry(0.28, 0.28, 0.05, 14), cup[0], cup[1] + 0.22, cup[2]));
+    for (let i = 0; i < 6; i++) { const a = i / 6 * 6.28; turDark.push(T(new THREE.BoxGeometry(0.1, 0.07, 0.05).rotateY(-a), cup[0] + Math.cos(a) * 0.34, cup[1] + 0.17, cup[2] + Math.sin(a) * 0.34)); } // vision blocks
+    turDark.push(T(new THREE.CylinderGeometry(0.022, 0.026, 1.0, 8).rotateX(Math.PI / 2), cup[0] + 0.1, cup[1] + 0.42, cup[2] + 0.45), T(new THREE.BoxGeometry(0.1, 0.12, 0.34), cup[0] + 0.1, cup[1] + 0.4, cup[2] - 0.05), T(new THREE.BoxGeometry(0.03, 0.18, 0.03), cup[0] + 0.1, cup[1] + 0.3, cup[2] + 0.05)); // pintle MG
+  }
   else { turDark.push(T(new THREE.BoxGeometry(0.5, 0.35, 0.5), -0.5, th + 0.3, -0.4), T(new THREE.CylinderGeometry(0.04, 0.04, 0.9, 6).rotateX(Math.PI / 2), -0.5, th + 0.42, 0.2)); // remote weapon station
     for (const sx of [-1, 1]) turDark.push(T(new THREE.BoxGeometry(0.22, 0.5, 0.22), sx * 0.75, th + 0.3, -tl * 0.3)); }
   if (!o.old) turCamo.push(T(new THREE.BoxGeometry(0.42, 0.36, 0.45), tw * 0.22, th + 0.18, front - 0.55)); // gunner's sight
@@ -2012,13 +2031,15 @@ function buildDesign(o) {
   const span = bl - 2 * br - wr * 1.6;
   const wheel = merge([new THREE.CylinderGeometry(wr, wr, 0.22, 22).rotateZ(Math.PI / 2), new THREE.CylinderGeometry(wr * 0.72, wr * 0.72, 0.27, 18).rotateZ(Math.PI / 2), new THREE.CylinderGeometry(wr * 0.3, wr * 0.36, 0.33, 10).rotateZ(Math.PI / 2)]);
   const sideX = o.turret === 'dome' ? tw * 0.47 : tw / 2 + 0.08;
+  // Christie-style and interleaved suspensions have no return rollers: the track rests on the road wheels and sags between them
+  const sag = o.noRollers ? { base: 0.1, amp: 0.07, step: span / (o.wheels - 1), start: -span / 2 } : { base: 0, amp: 0.045, step: 1.5, start: -1.5 };
   return {
     hullCamo: merge(hullCamo), hullDark: merge(hullDark), lights: merge(lights), turCamo: merge(turCamo), turDark: merge(turDark), tarp: merge(tarp), glass: merge(glass), mantlet, gun: merge(gun),
-    belt: beltGeometry(bl, br, 0.64, 0.1), wheel, sprocket: TANK_GEO.sprocket, roller: TANK_GEO.roller, antenna: TANK_GEO.antenna,
+    belt: beltGeometry(bl, br, 0.64, 0.1, 200, sag), wheel, sprocket: TANK_GEO.sprocket, roller: TANK_GEO.roller, antenna: TANK_GEO.antenna,
     L: {
       turret: [0, H, o.tZ], pivot: [0, th * 0.55, front], muzzleZ: GL + 0.5, coax: [0.33, 0.03, 0.45], sight: [tw * 0.22, th + 0.62, front - 0.2], beltY,
       wheel: { n: o.wheels, start: -span / 2, step: span / (o.wheels - 1), r: wr, y: 0.1 + wr }, sprocket: { z: -(bl / 2 - br), y: beltY, r: br - 0.03 }, idler: { z: bl / 2 - br, y: beltY, r: br - 0.06 },
-      rollers: { y: beltY + br - 0.16, zs: [-1.5, 0, 1.5], r: 0.11 }, antennas: [[tw * 0.35, -tl * 0.45]], belt: { len: bl, r: br, thick: 0.1 },
+      rollers: { y: beltY + br - 0.16, zs: o.noRollers ? [] : [-1.5, 0, 1.5], r: 0.11 }, antennas: [[tw * 0.35, -tl * 0.45]], belt: { len: bl, r: br, thick: 0.1, sag },
       decal: [sideX, th * 0.5, -tl * 0.18, Math.PI / 2], crew: cup ? [cup[0], cup[1] + 0.22 - 1.05, cup[2]] : null, jerry: { y: H + 0.25, pts: [[1.72, -hl + 0.5], [-1.72, -hl + 0.5]] },
     },
   };
@@ -2032,30 +2053,30 @@ const DESIGNS = {
   t14: buildDesign({ len: 8.4, hullW: 2.45, hullH: 1.45, skirts: true, era: true, turret: 'armata', tW: 2.7, tL: 3.4, tH: 0.85, tZ: 0.0, gunLen: 6.3, gunR: 0.1, wheels: 7, wheelR: 0.4 }),
   sprut: buildDesign({ len: 6.4, hullW: 2.2, hullH: 1.15, turret: 'dome', tW: 2.6, tL: 2.9, tH: 0.7, tZ: 0.1, gunLen: 6.0, gunR: 0.08, wheels: 7, wheelR: 0.3, brake: true }),
   // Vietnam, 1968
-  m48: buildDesign({ old: true, len: 6.9, hullW: 2.4, hullH: 1.45, turret: 'dome', tW: 3.0, tL: 3.6, tH: 0.95, tZ: 0.1, gunLen: 4.6, gunR: 0.085, wheels: 6, wheelR: 0.4, brake: true }),
+  m48: buildDesign({ spares: true, old: true, len: 6.9, hullW: 2.4, hullH: 1.45, turret: 'dome', tW: 3.0, tL: 3.6, tH: 0.95, tZ: 0.1, gunLen: 4.6, gunR: 0.085, wheels: 6, wheelR: 0.4, brake: true }),
   centurion: buildDesign({ old: true, len: 7.4, hullW: 2.4, hullH: 1.5, skirts: true, turret: 'box', tW: 2.9, tL: 3.3, tH: 0.9, tZ: 0.0, gunLen: 5.0, gunR: 0.08, wheels: 6, wheelR: 0.4 }),
   sheridan: buildDesign({ old: true, len: 6.1, hullW: 2.3, hullH: 1.3, turret: 'box', tW: 2.4, tL: 2.6, tH: 0.8, tZ: 0.1, gunLen: 2.2, gunR: 0.14, wheels: 5, wheelR: 0.42 }),
-  pt76: buildDesign({ old: true, len: 6.9, hullW: 2.6, hullH: 1.35, turret: 'dome', tW: 2.4, tL: 2.4, tH: 0.6, tZ: 0.8, gunLen: 3.5, gunR: 0.065, wheels: 6, wheelR: 0.36, brake: true }),
-  t54: buildDesign({ old: true, len: 6.4, hullW: 2.3, hullH: 1.3, drums: true, turret: 'dome', tW: 3.0, tL: 3.0, tH: 0.9, tZ: 0.5, gunLen: 4.5, gunR: 0.08, wheels: 5, wheelR: 0.42 }),
-  t55: buildDesign({ old: true, len: 6.5, hullW: 2.3, hullH: 1.3, drums: true, turret: 'dome', tW: 3.05, tL: 3.05, tH: 0.92, tZ: 0.5, gunLen: 4.7, gunR: 0.08, wheels: 5, wheelR: 0.43 }),
+  pt76: buildDesign({ noRollers: true, old: true, len: 6.9, hullW: 2.6, hullH: 1.35, turret: 'dome', tW: 2.4, tL: 2.4, tH: 0.6, tZ: 0.8, gunLen: 3.5, gunR: 0.065, wheels: 6, wheelR: 0.36, brake: true }),
+  t54: buildDesign({ noRollers: true, spares: true, old: true, len: 6.4, hullW: 2.3, hullH: 1.3, drums: true, turret: 'dome', tW: 3.0, tL: 3.0, tH: 0.9, tZ: 0.5, gunLen: 4.5, gunR: 0.08, wheels: 5, wheelR: 0.42 }),
+  t55: buildDesign({ noRollers: true, spares: true, old: true, len: 6.5, hullW: 2.3, hullH: 1.3, drums: true, turret: 'dome', tW: 3.05, tL: 3.05, tH: 0.92, tZ: 0.5, gunLen: 4.7, gunR: 0.08, wheels: 5, wheelR: 0.43 }),
   // Korea, 1951
   pershing: buildDesign({ old: true, len: 6.5, hullW: 2.4, hullH: 1.5, turret: 'box', tW: 2.6, tL: 3.0, tH: 0.9, tZ: 0.2, gunLen: 4.6, gunR: 0.08, wheels: 6, wheelR: 0.36, brake: true }),
   m46: buildDesign({ old: true, len: 6.9, hullW: 2.45, hullH: 1.55, turret: 'box', tW: 2.75, tL: 3.2, tH: 0.95, tZ: 0.15, gunLen: 4.7, gunR: 0.085, wheels: 6, wheelR: 0.38, brake: true }),
   chaffee: buildDesign({ old: true, len: 5.4, hullW: 2.2, hullH: 1.35, turret: 'dome', tW: 2.2, tL: 2.4, tH: 0.75, tZ: 0.2, gunLen: 3.2, gunR: 0.06, wheels: 5, wheelR: 0.34 }),
-  t3485: buildDesign({ old: true, len: 6.0, hullW: 2.3, hullH: 1.45, turret: 'box', tW: 2.5, tL: 2.9, tH: 0.85, tZ: 0.5, gunLen: 4.4, gunR: 0.07, wheels: 5, wheelR: 0.42 }),
+  t3485: buildDesign({ noRollers: true, spares: true, old: true, len: 6.0, hullW: 2.3, hullH: 1.45, turret: 'box', tW: 2.5, tL: 2.9, tH: 0.85, tZ: 0.5, gunLen: 4.4, gunR: 0.07, wheels: 5, wheelR: 0.42 }),
   // Cold War, 1985
   m60: buildDesign({ old: true, len: 6.9, hullW: 2.4, hullH: 1.5, turret: 'dome', tW: 3.1, tL: 3.8, tH: 1.05, tZ: 0.0, gunLen: 5.0, gunR: 0.085, wheels: 6, wheelR: 0.38 }),
   leo2a4: buildDesign({ len: 7.2, hullW: 2.35, hullH: 1.38, skirts: true, turret: 'box', tW: 3.1, tL: 3.7, tH: 0.82, tZ: -0.3, gunLen: 5.0, gunR: 0.1, wheels: 7, wheelR: 0.36 }),
   t80b: buildDesign({ len: 6.9, hullW: 2.25, hullH: 1.22, skirts: true, turret: 'dome', tW: 3.2, tL: 3.5, tH: 0.86, tZ: 0.25, gunLen: 5.6, gunR: 0.09, wheels: 6, wheelR: 0.38 }),
-  t64b: buildDesign({ len: 6.6, hullW: 2.2, hullH: 1.18, skirts: true, turret: 'dome', tW: 3.1, tL: 3.4, tH: 0.82, tZ: 0.3, gunLen: 5.6, gunR: 0.09, wheels: 6, wheelR: 0.3 }),
-  t72a: buildDesign({ len: 6.9, hullW: 2.3, hullH: 1.22, drums: true, turret: 'dome', tW: 3.2, tL: 3.6, tH: 0.88, tZ: 0.25, gunLen: 5.6, gunR: 0.09, wheels: 6, wheelR: 0.42 }),
+  t64b: buildDesign({ spares: true, len: 6.6, hullW: 2.2, hullH: 1.18, skirts: true, turret: 'dome', tW: 3.1, tL: 3.4, tH: 0.82, tZ: 0.3, gunLen: 5.6, gunR: 0.09, wheels: 6, wheelR: 0.3 }),
+  t72a: buildDesign({ spares: true, len: 6.9, hullW: 2.3, hullH: 1.22, drums: true, turret: 'dome', tW: 3.2, tL: 3.6, tH: 0.88, tZ: 0.25, gunLen: 5.6, gunR: 0.09, wheels: 6, wheelR: 0.42 }),
   // WW2, 1944
-  sherman: buildDesign({ old: true, len: 6.0, hullW: 2.3, hullH: 1.75, turret: 'dome', tW: 2.5, tL: 2.7, tH: 0.85, tZ: 0.1, gunLen: 3.9, gunR: 0.075, wheels: 6, wheelR: 0.3, brake: true }),
+  sherman: buildDesign({ spares: true, old: true, len: 6.0, hullW: 2.3, hullH: 1.75, turret: 'dome', tW: 2.5, tL: 2.7, tH: 0.85, tZ: 0.1, gunLen: 3.9, gunR: 0.075, wheels: 6, wheelR: 0.3, brake: true }),
   cromwell: buildDesign({ old: true, len: 6.3, hullW: 2.3, hullH: 1.5, turret: 'box', tW: 2.3, tL: 2.4, tH: 0.85, tZ: 0.2, gunLen: 3.7, gunR: 0.075, wheels: 5, wheelR: 0.42 }),
   churchill: buildDesign({ old: true, len: 7.4, hullW: 2.4, hullH: 1.65, skirts: true, turret: 'box', tW: 2.4, tL: 2.5, tH: 0.9, tZ: 0.6, gunLen: 3.2, gunR: 0.075, wheels: 9, wheelR: 0.24 }),
-  pz4: buildDesign({ old: true, len: 5.9, hullW: 2.2, hullH: 1.55, skirts: true, turret: 'box', tW: 2.2, tL: 2.6, tH: 0.9, tZ: 0.3, gunLen: 4.3, gunR: 0.065, wheels: 8, wheelR: 0.26, brake: true }),
-  panther: buildDesign({ old: true, len: 6.9, hullW: 2.4, hullH: 1.6, skirts: true, turret: 'box', tW: 2.4, tL: 2.9, tH: 0.95, tZ: 0.2, gunLen: 5.4, gunR: 0.065, wheels: 8, wheelR: 0.4, brake: true }),
-  tiger: buildDesign({ old: true, len: 6.4, hullW: 2.6, hullH: 1.75, turret: 'box', tW: 2.8, tL: 3.0, tH: 1.0, tZ: 0.1, gunLen: 4.9, gunR: 0.085, wheels: 8, wheelR: 0.44, brake: true }),
+  pz4: buildDesign({ spares: true, old: true, len: 5.9, hullW: 2.2, hullH: 1.55, skirts: true, turret: 'box', tW: 2.2, tL: 2.6, tH: 0.9, tZ: 0.3, gunLen: 4.3, gunR: 0.065, wheels: 8, wheelR: 0.26, brake: true }),
+  panther: buildDesign({ noRollers: true, old: true, len: 6.9, hullW: 2.4, hullH: 1.6, skirts: true, turret: 'box', tW: 2.4, tL: 2.9, tH: 0.95, tZ: 0.2, gunLen: 5.4, gunR: 0.065, wheels: 8, wheelR: 0.4, brake: true }),
+  tiger: buildDesign({ noRollers: true, old: true, len: 6.4, hullW: 2.6, hullH: 1.75, turret: 'box', tW: 2.8, tL: 3.0, tH: 1.0, tZ: 0.1, gunLen: 4.9, gunR: 0.085, wheels: 8, wheelR: 0.44, brake: true }),
 };
 for (const k of ['leopard', 'challenger', 't80', 't90', 't14', 'sprut', 'm48', 'centurion', 'sheridan', 'pt76', 't54', 't55', 'sherman', 'cromwell', 'churchill', 'pz4', 'panther', 'tiger', 'pershing', 'm46', 'chaffee', 't3485', 'm60', 'leo2a4', 't80b', 't64b', 't72a']) for (const g of ['hullCamo', 'turCamo']) worldUV(DESIGNS[k][g], 0.22);
 
@@ -2146,7 +2167,7 @@ let BLUE_KINDS = ERAS[era].blue;
 let playerKind = BLUE_KINDS[0];
 function loadPlayerKind() { BLUE_KINDS = ERAS[era].blue; playerKind = BLUE_KINDS[0]; try { const k = localStorage.getItem('warzone.tank.' + era); if (BLUE_KINDS.includes(k)) playerKind = k; } catch (e) { } }
 loadPlayerKind();
-const darkMetal = new THREE.MeshStandardMaterial({ color: 0x2a2b27, roughness: 0.55, metalness: 0.65 });
+const darkMetal = new THREE.MeshStandardMaterial({ color: 0x3a3b35, roughness: 0.5, metalness: 0.6 });
 const wheelMat = new THREE.MeshStandardMaterial({ color: 0x3d382f, roughness: 0.7, metalness: 0.4 });
 const blobMat = new THREE.MeshBasicMaterial({ map: radialTex([[0, 'rgba(0,0,0,0.8)'], [0.55, 'rgba(0,0,0,0.5)'], [1, 'rgba(0,0,0,0)']]), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
 const BLOB_GEO = new THREE.PlaneGeometry(5.6, 10).rotateX(-Math.PI / 2);
@@ -2165,11 +2186,20 @@ const armourNormal = (() => {
   seam(60, 250, 300, 250, 0.7, 2); seam(420, 40, 420, 300, 0.7, 2);
   return heightToNormalTex(h, N, 2.5);
 })();
+function addDust(sh) {
+  sh.vertexShader = 'varying float vUpN;\n' + sh.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvUpN = normalize(mat3(modelMatrix) * objectNormal).y;');
+  sh.fragmentShader = 'varying float vUpN;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+    float dust = smoothstep(0.5, 0.95, vUpN) * (0.3 + 0.7 * texture2D(map, vMapUv * 2.7 + 0.3).r);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.53, 0.42), dust * 0.38);`);
+}
 for (const k in SCHEMES) {
-  SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.62, metalness: 0.14, normalMap: armourNormal, normalScale: new THREE.Vector2(0.55, 0.55) });
+  SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.66, metalness: 0.1, normalMap: armourNormal, normalScale: new THREE.Vector2(0.55, 0.55) });
+  SCHEMES[k].mat.color.setScalar(1.22);
+  SCHEMES[k].mat.onBeforeCompile = (sh) => addDust(sh);
   // hull variant: dried mud and dust caked onto the lower hull and running gear
   const hm = SCHEMES[k].hullMat = SCHEMES[k].mat.clone();
   hm.onBeforeCompile = (sh) => {
+    addDust(sh);
     sh.vertexShader = 'varying float vLY;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvLY = position.y;');
     sh.fragmentShader = 'varying float vLY;\n' + sh.fragmentShader
       .replace('#include <map_fragment>', `#include <map_fragment>
