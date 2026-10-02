@@ -58,6 +58,10 @@ canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block
     linear-gradient(var(--c), var(--c)) bottom right / 10px 2px, linear-gradient(var(--c), var(--c)) bottom right / 2px 10px;
   background-repeat: no-repeat; filter: drop-shadow(0 0 2px rgba(0,0,0,0.7)); }
 .mk.lock .br { --c: #ffd1c9; }
+.mk.ally .br { --c: #7fb8ff; opacity: 0.6; }
+.mk.ally .hp b { background: #7fb8ff; }
+.mk.ally .d { color: #cfe3ff; }
+.mk.ally .arr { border-bottom-color: #7fb8ff; }
 .mk .arr { display: none; position: absolute; left: 0; top: 0; width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 16px solid var(--danger); transform: translate(-50%, -50%) rotate(var(--r, 0rad)); filter: drop-shadow(0 0 2px rgba(0,0,0,0.7)); }
 .mk.off .br { display: none; }
 .mk.off .arr { display: block; }
@@ -238,7 +242,7 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
   <div class="slab">
     <div class="eyebrow">Sector 7 · Valley of Orsk · 18:40 local</div>
     <h1>WAR<br>ZONE</h1>
-    <p class="brief">You command a main battle tank holding the valley road. Enemy armour is coming over the ridges in waves. Hold the village, keep your hull in one piece, and make every round count.</p>
+    <p class="brief">You lead a platoon of four main battle tanks holding the valley road. Enemy light tanks, T-72s and heavy tanks are coming over the ridges in waves. Hold the village, keep your platoon alive, and make every round count.</p>
     <div class="keys">
       <kbd>W A S D</kbd><span>Drive and steer the hull</span>
       <kbd>Mouse</kbd><span>Traverse turret and aim the gun</span>
@@ -398,13 +402,13 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.62;
+renderer.toneMappingExposure = 0.72;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 9000);
-const FOG_COLOR = new THREE.Color(0xc7a98a);
-scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0014);
+const FOG_COLOR = new THREE.Color(0xb7b4a8);
+scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0011);
 
 // Sun
 const SUN_EL = THREE.MathUtils.degToRad(15), SUN_AZ = 2.45;
@@ -431,7 +435,7 @@ THREE.ShaderChunk.fog_fragment = `
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fc, fogFactor);
 #endif
 `;
-const sun = new THREE.DirectionalLight(0xffd2a0, 4.2);
+const sun = new THREE.DirectionalLight(0xffdcae, 4.8);
 sun.castShadow = true;
 sun.shadow.bias = -0.0003;
 sun.shadow.normalBias = 0.5;
@@ -445,7 +449,7 @@ scene.add(hemi);
 const sky = new Sky();
 sky.scale.setScalar(8000);
 const skyU = sky.material.uniforms;
-skyU.turbidity.value = 7.5; skyU.rayleigh.value = 2.0; skyU.mieCoefficient.value = 0.0055; skyU.mieDirectionalG.value = 0.86;
+skyU.turbidity.value = 4.2; skyU.rayleigh.value = 2.7; skyU.mieCoefficient.value = 0.004; skyU.mieDirectionalG.value = 0.86;
 skyU.sunPosition.value.copy(sunDir).multiplyScalar(1000);
 scene.add(sky);
 {
@@ -526,14 +530,24 @@ function naturalHeight(x, z) {
   return h;
 }
 const VILLAGE_H = naturalHeight(VILLAGE.x, VILLAGE.y);
+const LAKE = { x: -150, z: 110, r: 68 };
+const LAKE_Y = naturalHeight(LAKE.x, LAKE.z) - 1.0;
 function rawHeight(x, z) {
   let h = naturalHeight(x, z);
   h = lerp(h, VILLAGE_H + fbm(x * 0.02, z * 0.02, 2) * 0.6, smoothstep(85, 48, Math.hypot(x - VILLAGE.x, z - VILLAGE.y)));
   const rd = roadDist(x, z);
   h -= smoothstep(8, 3, rd) * 0.55;
+  // lake basin with an irregular shoreline
+  const ld = Math.hypot(x - LAKE.x, z - LAKE.z) + noise2(x * 0.02, z * 0.02) * 14;
+  h = lerp(h, LAKE_Y + 1.2 + fbm(x * 0.05, z * 0.05, 2) * 0.4, smoothstep(LAKE.r + 40, LAKE.r, ld));
+  h -= 5 * smoothstep(LAKE.r, LAKE.r * 0.25, ld);
+  // raise a gentle bank so low ground outside the basin never sits below the waterline
+  const bank = LAKE_Y + 0.35 + Math.max(0, ld - LAKE.r) * 0.02;
+  h = lerp(h, Math.max(h, bank), smoothstep(LAKE.r - 12, LAKE.r + 4, ld) * (1 - smoothstep(LAKE.r + 160, LAKE.r + 200, ld)));
   return h;
 }
 const HEIGHTS = new Float32Array((SEG + 1) * (SEG + 1));
+const inWater = (x, z) => terrainHeight(x, z) < LAKE_Y + 0.5;
 for (let j = 0; j <= SEG; j++) for (let i = 0; i <= SEG; i++) HEIGHTS[j * (SEG + 1) + i] = rawHeight(-HALF + i * CELL, -HALF + j * CELL);
 
 function terrainHeight(x, z) {
@@ -563,7 +577,7 @@ let terrain;
 {
   const W = SEG + 1, count = W * W;
   const pos = new Float32Array(count * 3), col = new Float32Array(count * 3), uv = new Float32Array(count * 2);
-  const cGrass = new THREE.Color(0x4f5a2c), cGrassLush = new THREE.Color(0x3f5226), cDry = new THREE.Color(0x857a45), cDirt = new THREE.Color(0x6a5238), cRock = new THREE.Color(0x77706a), cRoad = new THREE.Color(0x8a7154), cRut = new THREE.Color(0x5a4632), cFar = new THREE.Color(0x6e6a64);
+  const cGrass = new THREE.Color(0x4f7220), cGrassLush = new THREE.Color(0x356a1a), cDry = new THREE.Color(0x9a8c38), cDirt = new THREE.Color(0x6a5238), cRock = new THREE.Color(0x77706a), cRoad = new THREE.Color(0x8a7154), cRut = new THREE.Color(0x5a4632), cFar = new THREE.Color(0x6e6a64), cShore = new THREE.Color(0x7c6a48);
   const c = new THREE.Color(), n = new THREE.Vector3();
   for (let j = 0; j <= SEG; j++) for (let i = 0; i <= SEG; i++) {
     const k = j * W + i, x = -HALF + i * CELL, z = -HALF + j * CELL, y = HEIGHTS[k];
@@ -583,6 +597,7 @@ let terrain;
     c.lerp(cRut, smoothstep(0.9, 0.2, Math.abs(rd - 1.6)) * smoothstep(5, 3, rd) * 0.6);
     const vd = Math.hypot(x - VILLAGE.x, z - VILLAGE.y);
     c.lerp(cDirt, smoothstep(70, 30, vd) * 0.45);
+    c.lerp(cShore, smoothstep(LAKE_Y + 1.4, LAKE_Y + 0.2, y));
     const shade = 0.88 + n2 * 0.12;
     col[k * 3] = c.r * shade; col[k * 3 + 1] = c.g * shade; col[k * 3 + 2] = c.b * shade;
   }
@@ -626,6 +641,24 @@ let terrain;
   terrain.receiveShadow = true;
   scene.add(terrain);
 }
+
+// Lake surface: glossy, sky-reflecting water with two scrolling ripple layers
+const waterNormal = heightToNormalTex(tileNoise(256, 8, 4, 404, 0.55), 256, 3);
+waterNormal.repeat.set(26, 26);
+const water = new THREE.Mesh(new THREE.CircleGeometry(LAKE.r + 50, 72).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({
+  color: 0x1f6a72, roughness: 0.06, metalness: 0.15, normalMap: waterNormal, normalScale: new THREE.Vector2(0.28, 0.28), transparent: true, opacity: 0.86, envMapIntensity: 1.5,
+}));
+water.material.onBeforeCompile = (sh) => {
+  sh.uniforms.uTime = { get value() { return windUniform.value; } };
+  sh.fragmentShader = 'uniform float uTime;\n' + sh.fragmentShader.replace('#include <normal_fragment_maps>', `
+    vec3 wn1 = texture2D(normalMap, vNormalMapUv + vec2(uTime * 0.012, uTime * 0.007)).xyz * 2.0 - 1.0;
+    vec3 wn2 = texture2D(normalMap, vNormalMapUv * 0.37 - vec2(uTime * 0.006, -uTime * 0.01)).xyz * 2.0 - 1.0;
+    vec3 wn = normalize(vec3((wn1.xy + wn2.xy) * normalScale, 1.0));
+    normal = normalize(tbn * wn);`);
+};
+water.position.set(LAKE.x, LAKE_Y, LAKE.z);
+water.receiveShadow = true;
+scene.add(water);
 
 // =====================================================================
 // Collision world: spatial hash of circles and oriented boxes
@@ -803,7 +836,7 @@ const treeMeshes = [];
     if (forest < -0.05 && rand() > 0.06) continue;
     if (roadDist(x, z) < 11) continue;
     if (Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 72) continue;
-    if (Math.hypot(x + 150, z + 150) < 62) continue;
+    if (Math.hypot(x + 150, z + 150) < 62 || inWater(x, z)) continue;
     const n = terrainNormal(x, z); if (n.y < 0.8) continue;
     const t = rand() < 0.75 ? 0 : 1;
     if (placed[t].length >= counts[t]) continue;
@@ -818,7 +851,7 @@ const treeMeshes = [];
     list.forEach((tr, i) => {
       tr.meshes = [trunkMesh, leafMesh]; tr.index = i; tr.y = terrainHeight(tr.x, tr.z) - 0.15; tr.fall = 0; tr.fallDir = 0; tr.alive = true; tr.falling = false;
       setTreeMatrix(tr);
-      leafMesh.setColorAt(i, col.setRGB(R(0.82, 1.08), R(0.88, 1.1), R(0.72, 0.98)));
+      leafMesh.setColorAt(i, col.setRGB(R(0.75, 1.02), R(0.95, 1.18), R(0.58, 0.85)));
       trees.push(tr);
       if (Math.hypot(tr.x, tr.z) < ARENA + 60) addCollider({ type: 'circle', x: tr.x, z: tr.z, r: 0.6 * tr.s, tree: tr, h: 9 * tr.s });
     });
@@ -863,7 +896,7 @@ function knockTree(tr, dirX, dirZ) {
   const lists = [[], [], []];
   for (let i = 0; i < 520; i++) {
     const r = Math.sqrt(rand()) * 900, a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (Math.abs(x) > HALF - 10 || Math.abs(z) > HALF - 10 || roadDist(x, z) < 8 || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 60) continue;
+    if (Math.abs(x) > HALF - 10 || Math.abs(z) > HALF - 10 || roadDist(x, z) < 8 || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 60 || inWater(x, z)) continue;
     const s = Math.pow(rand(), 2.4) * 3.6 + 0.4;
     lists[i % 3].push({ x, z, s, rot: rand() * 6.28 });
   }
@@ -903,7 +936,7 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
   for (let i = 0; i < 6; i++) { const p = new THREE.PlaneGeometry(1.5, 0.75); p.translate(0, 0.375, 0); p.rotateY(i * Math.PI / 3 + (i >= 3 ? Math.PI : 0)); blades.push(p); }
   const geo = mergeGeometries(blades);
   const nrm = geo.attributes.normal; for (let i = 0; i < nrm.count; i++) nrm.setXYZ(i, 0, 1, 0);
-  const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.42, roughness: 0.95, color: 0xc4bd92 });
+  const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.42, roughness: 0.95, color: 0xb5d07a });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = windUniform;
     sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `
@@ -921,7 +954,7 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
   const list = [];
   while (list.length < MAXG && tries++ < MAXG * 6) {
     const r = Math.sqrt(rand()) * (ARENA + 40), a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (roadDist(x, z) < 4.5) continue;
+    if (roadDist(x, z) < 4.5 || inWater(x, z)) continue;
     if (fbm(x * 0.02 + 30, z * 0.02, 2) < -0.25) continue;
     const nn = terrainNormal(x, z); if (nn.y < 0.86) continue;
     list.push([x, z]);
@@ -944,7 +977,7 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
   // Wildflower patches: same cards, a stems-and-petals texture, clustered by noise
   const ftex = canvasTex(256, (g, s) => {
     g.clearRect(0, 0, s, s);
-    const rnd = mulberry32(33), hues = ['#f2d14b', '#f4efe2', '#b98bd8', '#e8803a'];
+    const rnd = mulberry32(33), hues = ['#ffd83a', '#ffffff', '#a875ee', '#ff8a2a', '#e8322a', '#ff6fae', '#5aa8ff'];
     for (let i = 0; i < 18; i++) {
       const x = s * (0.1 + rnd() * 0.8), h = s * (0.35 + rnd() * 0.45), lean = (rnd() - 0.5) * s * 0.12;
       g.strokeStyle = '#4d5e2a'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, s); g.quadraticCurveTo(x, s - h * 0.5, x + lean, s - h); g.stroke();
@@ -955,14 +988,14 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
   });
   const fmat = new THREE.MeshStandardMaterial({ map: ftex, alphaTest: 0.45, roughness: 0.9 });
   fmat.onBeforeCompile = mat.onBeforeCompile;
-  const FMAX = 14000;
+  const FMAX = 26000;
   flowerMesh = new THREE.InstancedMesh(geo, fmat, FMAX);
   flowerMesh.receiveShadow = true;
   let fn = 0, ftries = 0;
   while (fn < FMAX && ftries++ < FMAX * 20) {
     const r = Math.sqrt(rand()) * (ARENA + 20), a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (fbm(x * 0.015 + 70, z * 0.015 - 30, 3) < 0.22 || roadDist(x, z) < 5) continue;
-    if (terrainNormal(x, z).y < 0.88) continue;
+    if (fbm(x * 0.015 + 70, z * 0.015 - 30, 3) < 0.12 || roadDist(x, z) < 5) continue;
+    if (terrainNormal(x, z).y < 0.88 || inWater(x, z)) continue;
     const sc = R(0.55, 0.95);
     q.setFromAxisAngle(up, rand() * 6.28);
     m.compose(new THREE.Vector3(x, terrainHeight(x, z) - 0.05, z), q, new THREE.Vector3(sc, sc, sc));
@@ -992,7 +1025,7 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
     const r = Math.sqrt(rand()) * (ARENA + 120), a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (roadDist(x, z) < 7 || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 40 || Math.hypot(x + 150, z + 150) < 25) continue;
     if (fbm(x * 0.006 + 3, z * 0.006 - 8, 3) < -0.15 && rand() > 0.25) continue;
-    if (terrainNormal(x, z).y < 0.82) continue;
+    if (terrainNormal(x, z).y < 0.82 || inWater(x, z)) continue;
     const sc = R(0.7, 1.6);
     q.setFromAxisAngle(up, rand() * 6.28);
     m.compose(new THREE.Vector3(x, terrainHeight(x, z) - 0.15, z), q, new THREE.Vector3(sc, sc * R(0.8, 1.2), sc));
@@ -1360,6 +1393,17 @@ const particles = {
     }
     for (let i = 0; i < 7; i++) smokePool.emit({ x: p.x, y: p.y, z: p.z, vx: rr(-1.5, 1.5), vy: rr(0.5, 2), vz: rr(-1.5, 1.5), life: rr(1.2, 2.4), s0: 0.6, s1: rr(2.5, 3.5), c0: [0.08, 0.075, 0.07, 0.7], c1: [0.2, 0.2, 0.2, 0], drag: 1.5 });
   },
+  splash(p, k = 1) {
+    for (let i = 0; i < 30 * k; i++) {
+      const a = rr(0, 6.28), sp = rr(0.3, 2.5);
+      smokePool.emit({ x: p.x + rr(-0.6, 0.6), y: p.y, z: p.z + rr(-0.6, 0.6), vx: Math.cos(a) * sp, vy: rr(8, 22) * k, vz: Math.sin(a) * sp, life: rr(1.2, 2.6), s0: rr(0.8, 1.6) * k, s1: rr(3, 6) * k, c0: [0.9, 0.95, 0.97, 0.75], c1: [1, 1, 1, 0], grav: 9, drag: 1.2, fin: 0.03 });
+    }
+    for (let i = 0; i < 40 * k; i++) {
+      const a = rr(0, 6.28), sp = rr(2, 9);
+      sparkPool.emit({ x: p.x, y: p.y + 0.2, z: p.z, vx: Math.cos(a) * sp, vy: rr(6, 18), vz: Math.sin(a) * sp, life: rr(0.8, 1.6), s0: rr(0.12, 0.25), s1: 0.1, c0: [1.6, 1.8, 1.9, 1], c1: [1, 1.1, 1.2, 0], grav: 18, drag: 0.4 });
+    }
+    for (let i = 0; i < 18 * k; i++) { const a = i / 18 * 6.28; smokePool.emit({ x: p.x, y: LAKE_Y + 0.3, z: p.z, vx: Math.cos(a) * 6, vy: 0.2, vz: Math.sin(a) * 6, life: 1.6, s0: 1, s1: 4, c0: [0.85, 0.92, 0.95, 0.45], c1: [0.9, 0.95, 1, 0], drag: 2.2 }); }
+  },
   sparks(p, n = 20, n2) {
     for (let i = 0; i < n; i++) {
       const v = new THREE.Vector3(rr(-1, 1), rr(-0.2, 1), rr(-1, 1)).normalize().multiplyScalar(rr(6, 20));
@@ -1677,7 +1721,18 @@ for (const G of [TANK_GEO, TANK_GEO_E]) for (const k of ['hullCamo', 'turCamo'])
 
 const SCHEMES = {
   player: { camo: camoTexture([0x76804a, 0x55603a, 0x3a3a2e, 0x968860], 101) },
+  ally: { camo: camoTexture([0x6f8048, 0x4c5e34, 0x343829, 0x8f8a5a], 103) },
   enemy: { camo: camoTexture([0xa8915f, 0x7f6a48, 0x5e4f3a, 0xbfa77a], 202) },
+  light: { camo: camoTexture([0xc2b48c, 0x9c9070, 0x7a7058, 0xd8cca4], 303) },
+  heavy: { camo: camoTexture([0x535a4c, 0x3e443a, 0x2c302a, 0x6a6f60], 404) },
+};
+// Vehicle classes. Allies use your design; the opposing force fields light, main battle and heavy tanks.
+const KINDS = {
+  player: { design: 'player', scheme: 'player', team: 'blue', hp: 100, maxF: 14, reload: 2.2, scale: 1, name: 'You' },
+  ally: { design: 'player', scheme: 'ally', team: 'blue', hp: 130, maxF: 11, reload: 4.2, scale: 1, dmg: 1, name: 'Allied tank' },
+  light: { design: 'enemy', scheme: 'light', team: 'red', hp: 60, maxF: 13.5, reload: 3.4, scale: 0.82, dmg: 0.7, name: 'Light tank' },
+  mbt: { design: 'enemy', scheme: 'enemy', team: 'red', hp: 100, maxF: 9, reload: 5, scale: 1, dmg: 1, name: 'T-72' },
+  heavy: { design: 'enemy', scheme: 'heavy', team: 'red', hp: 190, maxF: 6, reload: 6.2, scale: 1.18, dmg: 1.45, name: 'Heavy tank' },
 };
 const darkMetal = new THREE.MeshStandardMaterial({ color: 0x2a2b27, roughness: 0.55, metalness: 0.65 });
 const wheelMat = new THREE.MeshStandardMaterial({ color: 0x3d382f, roughness: 0.7, metalness: 0.4 });
@@ -1702,8 +1757,8 @@ for (const k in SCHEMES) {
   };
 }
 
-function buildTankVisual(scheme) {
-  const G = scheme === 'enemy' ? TANK_GEO_E : TANK_GEO, L = G.L;
+function buildTankVisual(scheme, design) {
+  const G = design === 'enemy' ? TANK_GEO_E : TANK_GEO, L = G.L;
   const camo = SCHEMES[scheme].mat;
   const root = new THREE.Group();
   const mk = (geo, mat, parent = root) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
@@ -1748,22 +1803,24 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const SHELL_SPEED = 330, GRAVITY = 9.81;
 
 class Tank {
-  constructor(isPlayer, x, z, heading) {
+  constructor(isPlayer, x, z, heading, kind = isPlayer ? 'player' : 'mbt') {
     this.isPlayer = isPlayer;
-    this.v = buildTankVisual(isPlayer ? 'player' : 'enemy');
+    const K = this.K = KINDS[kind]; this.kind = kind; this.team = K.team; this.size = K.scale;
+    this.v = buildTankVisual(K.scheme, K.design);
+    this.v.root.scale.setScalar(K.scale);
     scene.add(this.v.root);
     this.pos = new THREE.Vector3(x, terrainHeight(x, z), z);
     this.heading = heading; this.speed = 0; this.turn = 0;
     this.turretYaw = 0; this.gunElev = 0; this.turretRate = 0;
-    this.maxHp = isPlayer ? 100 : 100; this.hp = this.maxHp; this.alive = true;
-    this.reload = 0; this.reloadTime = isPlayer ? 2.2 : 5;
+    this.maxHp = K.hp; this.hp = this.maxHp; this.alive = true;
+    this.reload = 0; this.reloadTime = K.reload;
     this.recoil = 0; this.pitchOff = 0; this.pitchVel = 0; this.rollOff = 0; this.rollVel = 0;
     this.trackDist = [0, 0]; this.lastMark = [null, null];
     this.quat = new THREE.Quaternion();
     this.inv = new THREE.Matrix4();
     this.input = { throttle: 0, steer: 0 };
     this.dustT = 0; this.exT = 0;
-    this.maxF = isPlayer ? 14 : 9; this.maxR = 5.5;
+    this.maxF = K.maxF; this.maxR = 5.5;
     this.v.root.position.copy(this.pos);
     this.alignToGround(1);
     tanks.push(this);
@@ -1789,7 +1846,7 @@ class Tank {
     const v = this.v;
     if (this.alive) {
       const { throttle, steer } = this.input;
-      let target = throttle > 0 ? throttle * this.maxF : throttle * this.maxR;
+      let target = (throttle > 0 ? throttle * this.maxF : throttle * this.maxR) * (this.pos.y < LAKE_Y + 0.2 ? 0.5 : 1);
       target *= 1 - clamp(this.slope * 1.4, -0.25, 0.65) * Math.sign(target || 1);
       const braking = Math.sign(target) !== Math.sign(this.speed) && Math.abs(this.speed) > 0.2;
       this.speed = approach(this.speed, target, (braking ? 12 : throttle ? 5 : 3.5) * dt);
@@ -1829,7 +1886,7 @@ class Tank {
     this.inv.copy(v.root.matrixWorld).invert();
   }
   collide() {
-    const R0 = 3.0;
+    const R0 = 3.0 * this.size;
     let hit = false;
     for (const c of queryColliders(this.pos.x, this.pos.z, R0 + 6)) {
       if (c.type === 'circle') {
@@ -1856,7 +1913,7 @@ class Tank {
     }
     for (const o of tanks) {
       if (o === this) continue;
-      const dx = this.pos.x - o.pos.x, dz = this.pos.z - o.pos.z, d = Math.hypot(dx, dz), min = 6.2;
+      const dx = this.pos.x - o.pos.x, dz = this.pos.z - o.pos.z, d = Math.hypot(dx, dz), min = 3.1 * (this.size + o.size);
       if (d < min && d > 1e-4) { const k = (min - d) * (o.alive ? 0.5 : 1); this.pos.x += dx / d * k; this.pos.z += dz / d * k; hit = true; }
     }
     const r = Math.hypot(this.pos.x, this.pos.z), lim = ARENA + 60;
@@ -1873,6 +1930,7 @@ class Tank {
       for (const sx of [-1, 1]) {
         const x = this.pos.x + c * 1.55 * sx - s * 3.2 * Math.sign(this.speed), z = this.pos.z - s * 1.55 * sx - c * 3.2 * Math.sign(this.speed);
         const k = clamp(sp / 10, 0.4, 1.3), onRoad = roadDist(x, z) < 5;
+        if (terrainHeight(x, z) < LAKE_Y) { smokePool.emit({ x, y: LAKE_Y + 0.4, z, vx: rr(-1.5, 1.5), vy: rr(1.5, 4), vz: rr(-1.5, 1.5), life: rr(0.8, 1.6), s0: 0.8 * k, s1: rr(2.5, 4) * k, c0: [0.88, 0.93, 0.96, 0.55], c1: [1, 1, 1, 0], grav: 4, drag: 1.4 }); continue; }
         smokePool.emit({ x, y: terrainHeight(x, z) + 0.5, z, vx: rr(-0.7, 0.7) + wind.x * 0.5, vy: rr(0.4, 1.4), vz: rr(-0.7, 0.7) + wind.z * 0.5, life: rr(1.8, 3.4), s0: 1.2 * k, s1: rr(4.5, 7) * k, c0: onRoad ? [0.62, 0.52, 0.4, 0.34] : [0.5, 0.45, 0.34, 0.2], c1: [0.68, 0.6, 0.48, 0], drag: 1.3, grav: -0.2, fin: 0.1 });
       }
     }
@@ -2084,11 +2142,12 @@ function segmentHit(a, b, owner, skipTrees = false) {
   }
   // terrain: march the segment
   const steps = Math.max(2, Math.ceil(len / 2));
-  let prevT = 0, prevAbove = a.y - terrainHeight(a.x, a.z);
+  const surf = (x, z) => Math.max(terrainHeight(x, z), LAKE_Y);
+  let prevT = 0, prevAbove = a.y - surf(a.x, a.z);
   for (let k = 1; k <= steps; k++) {
     const t = k / steps; if (best && t > best.t) break;
-    const x = a.x + dx * t, y = a.y + dy * t, z = a.z + dz * t, above = y - terrainHeight(x, z);
-    if (above < 0) { const tt = prevT + (t - prevT) * (prevAbove / (prevAbove - above)); consider(tt, 'ground'); break; }
+    const x = a.x + dx * t, y = a.y + dy * t, z = a.z + dz * t, above = y - surf(x, z);
+    if (above < 0) { const tt = prevT + (t - prevT) * (prevAbove / (prevAbove - above)); consider(tt, terrainHeight(x, z) < LAKE_Y ? 'water' : 'ground'); break; }
     prevT = t; prevAbove = above;
   }
   if (best) best.point = new THREE.Vector3(a.x + dx * best.t, a.y + dy * best.t, a.z + dz * best.t);
@@ -2110,26 +2169,33 @@ function impact(s, hit) {
       if (tk === player.tank) feed('Ricochet. Armour held.', false); else if (shooter === player.tank) feed('Ricochet. No penetration.', true);
       return true;
     }
+    if (s.owner && s.owner.team === tk.team) { particles.sparks(p, mg ? 3 : 25); if (!mg) sfx.clang(p); return false; } // no friendly fire
     if (mg) { particles.sparks(p, 4); if (Math.random() < 0.3) sfx.ping(p); tk.damage(0.7, s.owner, p); }
     else {
       particles.penetration(p);
       sfx.clang(p);
-      let dmg = tk.isPlayer ? rr(13, 19) : rr(56, 66);
+      let dmg = tk.team === 'blue' ? rr(13, 19) * (s.owner?.K?.dmg ?? 1) : rr(56, 66) * (s.owner && !s.owner.isPlayer ? 0.8 : 1);
       const lp = hit.localP;
       let zone = 'front';
       if (lp.z < HB.z0 + 1.2) { dmg *= 1.7; zone = 'rear'; } else if (Math.abs(lp.x) > HB.x - 0.2 && lp.z < 2.5) { dmg *= 1.3; zone = 'side'; }
       if (lp.y > 1.45) zone += ' turret';
       const wasAlive = tk.alive;
       tk.damage(dmg, s.owner, p);
-      if (s.owner === player.tank && !tk.isPlayer) {
+      if (s.owner === player.tank && tk.team === 'red') {
         showHitmark();
-        if (wasAlive && !tk.alive) onKill(tk); else feed(`Hit · ${zone}`, false);
+        if (wasAlive && !tk.alive) onKill(tk); else feed(`Hit · ${tk.K.name} · ${zone}`, false);
+      } else if (wasAlive && !tk.alive) {
+        if (tk.team === 'red') { game.score += 50 * game.wave; feed(`Allies destroyed a ${tk.K.name}`, false); }
+        else if (!tk.isPlayer) feed('Allied tank lost', true);
       }
       if (tk.isPlayer) onPlayerHit(s.owner, dmg);
     }
   } else if (hit.type === 'ground') {
     if (mg) { smokePool.emit({ x: p.x, y: p.y + 0.2, z: p.z, vy: 2, life: 0.8, s0: 0.3, s1: 1.4, c0: [0.45, 0.38, 0.3, 0.5], c1: [0.5, 0.45, 0.35, 0] }); }
     else { particles.impactDirt(p, 1); decals.place(p.x, p.z, rr(2.6, 3.6)); sfx.explosion(p, 0.8); nearMissShake(p); }
+  } else if (hit.type === 'water') {
+    if (mg) smokePool.emit({ x: p.x, y: p.y + 0.2, z: p.z, vy: 3, life: 0.7, s0: 0.3, s1: 1.2, c0: [0.85, 0.9, 0.92, 0.6], c1: [0.9, 0.95, 0.97, 0] });
+    else { particles.splash(p, 1); sfx.explosion(p, 0.6); nearMissShake(p); }
   } else if (hit.type === 'tree') {
     if (!mg) { knockTree(hit.coll.tree, s.v.x, s.v.z); particles.impactDirt(p, 0.6, [0.3, 0.26, 0.18]); sfx.explosion(p, 0.6); }
     else particles.dust(p, 0.3);
@@ -2277,12 +2343,14 @@ const grade = new ShaderPass({
       col.g = texture2D(tDiffuse, vUv).g;
       col.b = texture2D(tDiffuse, vUv - c * ca).b;
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-      col = mix(vec3(l), col, 1.06);
+      // vibrance: lift muted colours more than already-saturated ones
+      float sat = max(max(col.r, col.g), col.b) - min(min(col.r, col.g), col.b);
+      col = mix(vec3(l), col, 1.18 + 0.25 * (1.0 - smoothstep(0.0, 0.5, sat)));
       // split tone: cool shadows, warm highlights
       col += vec3(-0.012, 0.0, 0.018) * (1.0 - smoothstep(0.0, 0.45, l)) + vec3(0.02, 0.008, -0.015) * smoothstep(0.5, 1.0, l);
-      col = (col - 0.5) * 1.05 + 0.5;
+      col = (col - 0.5) * 1.08 + 0.5;
       float vig = smoothstep(0.95, 0.3, length(c * vec2(1.15, 1.0)));
-      col *= mix(1.0, vig, 0.55);
+      col *= mix(1.0, vig, 0.4);
       col = mix(col, col * vec3(0.85, 1.0, 0.86) * 1.05, scope);
       col = mix(col, vec3(0.42, 0.03, 0.0), damage * 0.6 * smoothstep(0.25, 0.75, length(c)));
       float n = fract(sin(dot(vUv * res + fract(time) * 91.7, vec2(12.9898, 78.233))) * 43758.5453);
@@ -2362,9 +2430,9 @@ function onPlayerHit(from, dmg) {
   }
 }
 function onKill(tk) {
-  game.kills++; const pts = 100 * game.wave; game.score += pts;
+  game.kills++; const pts = Math.round(100 * game.wave * (tk.kind === 'heavy' ? 1.6 : tk.kind === 'light' ? 0.7 : 1)); game.score += pts;
   game.ammo = Math.min(60, game.ammo + 3);
-  feed(`Target destroyed · +${pts}`, false);
+  feed(`${tk.K.name} destroyed · +${pts}`, false);
   bigMsg('TARGET DESTROYED', null, 1.4);
 }
 
@@ -2388,7 +2456,7 @@ function drawCompass(heading) {
   }
   // enemy bearings
   if (player.tank) for (const t of tanks) {
-    if (t.isPlayer || !t.alive) continue;
+    if (t.team !== 'red' || !t.alive) continue;
     const b = Math.atan2(t.pos.x - player.tank.pos.x, t.pos.z - player.tank.pos.z);
     const rel = wrapAngle(heading - b) * 180 / Math.PI;
     if (Math.abs(rel) > 60) continue;
@@ -2420,7 +2488,7 @@ function drawRadar(dt) {
     if (t.isPlayer) continue;
     let [x, y] = toR(t.pos.x, t.pos.z); const d = Math.hypot(x, y); if (d > R0 - 6) { x *= (R0 - 6) / d; y *= (R0 - 6) / d; }
     rctx.save(); rctx.translate(x, y); rctx.rotate(-(t.heading - view));
-    rctx.fillStyle = t.alive ? '#ea4a3a' : 'rgba(223,230,207,0.35)';
+    rctx.fillStyle = !t.alive ? 'rgba(223,230,207,0.35)' : t.team === 'red' ? '#ea4a3a' : '#7fb8ff';
     rctx.beginPath(); rctx.moveTo(0, -9); rctx.lineTo(6, 7); rctx.lineTo(-6, 7); rctx.closePath(); rctx.fill(); rctx.restore();
   }
   // player
@@ -2500,45 +2568,68 @@ if (isTouch) {
 // =====================================================================
 // Waves & AI
 // =====================================================================
+function newAI() { return { target: new THREE.Vector2(), retarget: 0, los: 0, stuck: 0, reverseT: 0, fireDelay: rr(1, 3), foe: null, foeT: 0 }; }
+function pickEnemyKind(w) {
+  const r = Math.random();
+  if (w >= 2 && r < Math.min(0.12 + w * 0.04, 0.35)) return 'heavy';
+  return r < 0.62 ? 'mbt' : 'light';
+}
 function spawnEnemy() {
   const pt = player.tank;
   for (let tries = 0; tries < 50; tries++) {
     const a = rr(0, 6.28), r = rr(ARENA - 40, ARENA + 30), x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (pt && Math.hypot(x - pt.pos.x, z - pt.pos.z) < 170) continue;
-    if (queryColliders(x, z, 6).some((c) => c.type === 'obb' || (c.r > 1.5 && !c.tree))) continue;
-    const t = new Tank(false, x, z, Math.atan2(-x, -z));
+    if (inWater(x, z) || queryColliders(x, z, 6).some((c) => c.type === 'obb' || (c.r > 1.5 && !c.tree))) continue;
+    const kind = pickEnemyKind(game.wave);
+    const t = new Tank(false, x, z, Math.atan2(-x, -z), kind);
     const w = game.wave;
-    t.ai = { target: new THREE.Vector2(), retarget: 0, los: 0, stuck: 0, reverseT: 0, fireDelay: rr(1, 3) };
-    t.reloadTime = Math.max(3.2, 5.6 - w * 0.25);
+    t.ai = newAI();
+    t.reloadTime = t.K.reload * Math.max(0.65, 1 - w * 0.05);
     t.reload = rr(2, 4);
-    t.spread = Math.max(0.006, 0.03 - w * 0.0025);
-    t.maxF = 8 + Math.min(w, 6) * 0.5;
-    // drive in on the road side of the map with the turret already traversing
+    t.spread = Math.max(0.006, 0.03 - w * 0.0025) * (kind === 'light' ? 1.3 : 1);
+    t.maxF = t.K.maxF + Math.min(w, 6) * 0.4;
     return t;
   }
 }
+const ALLY_SLOTS = [[-16, -14], [16, -14], [0, -30]];
+function spawnAlly(slot) {
+  const pt = player.tank, [sx, sz] = ALLY_SLOTS[slot], h = pt.heading;
+  const x = pt.pos.x + sx * Math.cos(h) + sz * Math.sin(h), z = pt.pos.z - sx * Math.sin(h) + sz * Math.cos(h);
+  const t = new Tank(false, x, z, h, 'ally');
+  t.ai = newAI(); t.ai.slot = slot;
+  t.spread = 0.01; t.reload = rr(1, 3);
+  return t;
+}
+function reinforceAllies() {
+  if (!player.tank?.alive) return;
+  const taken = new Set(tanks.filter((t) => t.kind === 'ally' && t.alive).map((t) => t.ai.slot));
+  let n = 0;
+  for (let i = 0; i < ALLY_SLOTS.length; i++) if (!taken.has(i)) { spawnAlly(i); n++; }
+  if (n) feed(`${n} allied tank${n > 1 ? 's' : ''} rejoined the platoon`, false);
+}
 function nextWave() {
   game.wave++;
-  game.toSpawn = Math.min(2 + game.wave, 10);
+  game.toSpawn = Math.min(3 + game.wave * 2, 18);
   game.spawnT = 1.5;
   bigMsg(`WAVE ${game.wave}`, `${game.toSpawn} hostile tanks inbound`, 3);
 }
 function updateWaves(dt) {
   if (game.toSpawn > 0) {
     game.spawnT -= dt;
-    const alive = tanks.filter((t) => !t.isPlayer && t.alive).length;
-    if (game.spawnT <= 0 && alive < 6) { spawnEnemy(); game.toSpawn--; game.spawnT = rr(2, 4.5); }
-  } else if (game.waveTimer <= 0 && !tanks.some((t) => !t.isPlayer && t.alive)) {
+    const alive = tanks.filter((t) => t.team === 'red' && t.alive).length;
+    if (game.spawnT <= 0 && alive < 9) { spawnEnemy(); game.toSpawn--; game.spawnT = rr(2, 4.5); }
+  } else if (game.waveTimer <= 0 && !tanks.some((t) => t.team === 'red' && t.alive)) {
     game.waveTimer = 7;
     bigMsg(`WAVE ${game.wave} CLEARED`, 'Field repairs and resupply', 3);
     const pt = player.tank; pt.hp = Math.min(pt.maxHp, pt.hp + 35); game.ammo = Math.max(game.ammo, 40);
+    reinforceAllies();
   }
   if (game.waveTimer > 0) { game.waveTimer -= dt; if (game.waveTimer <= 0) { cleanupWrecks(); nextWave(); } }
 }
 function cleanupWrecks() {
   // keep the newest wrecks, remove older ones to bound draw calls
   const wrecks = tanks.filter((t) => !t.alive && !t.isPlayer);
-  while (wrecks.length > 6) { const w = wrecks.shift(); w.dispose(); tanks.splice(tanks.indexOf(w), 1); for (let i = emitters.length - 1; i >= 0; i--) if (emitters[i].tank === w) emitters.splice(i, 1); }
+  while (wrecks.length > 8) { const w = wrecks.shift(); w.dispose(); tanks.splice(tanks.indexOf(w), 1); for (let i = emitters.length - 1; i >= 0; i--) if (emitters[i].tank === w) emitters.splice(i, 1); }
 }
 function hasLOS(a, b) {
   const steps = 16;
@@ -2569,15 +2660,35 @@ function aimTurret(t, target, dt, traverse = 1.05, elevRate = 0.55) {
   t.gunElev = approach(t.gunElev, el, elevRate * dt);
   return Math.abs(diff) + Math.abs(el - t.gunElev);
 }
+function pickFoe(t) {
+  let best = null, bd = 1e9;
+  for (const o of tanks) {
+    if (!o.alive || o.team === t.team) continue;
+    let d = t.pos.distanceTo(o.pos); if (o.isPlayer) d *= 0.75;
+    if (d < bd) { bd = d; best = o; }
+  }
+  return best;
+}
 function updateAI(t, dt) {
-  const ai = t.ai, pt = player.tank;
-  if (!pt) return;
-  const dx = pt.pos.x - t.pos.x, dz = pt.pos.z - t.pos.z, dist = Math.hypot(dx, dz);
+  const ai = t.ai;
+  ai.foeT -= dt;
+  if (ai.foeT <= 0 || !ai.foe?.alive) { ai.foe = pickFoe(t); ai.foeT = rr(1.5, 3); }
+  const foe = ai.foe, lead = player.tank;
+  const following = t.team === 'blue' && lead?.alive;
+  if (!foe && !following) { t.input.throttle = 0; t.input.steer = 0; return; }
+  const ref = foe || lead;
+  const dist = Math.hypot(ref.pos.x - t.pos.x, ref.pos.z - t.pos.z);
   ai.retarget -= dt;
-  if (ai.retarget <= 0 || Math.hypot(ai.target.x - t.pos.x, ai.target.y - t.pos.z) < 12) {
+  if (following) {
+    if (ai.retarget <= 0) {
+      ai.retarget = 1;
+      const [sx, sz] = ALLY_SLOTS[ai.slot], h = lead.heading;
+      ai.target.set(lead.pos.x + sx * Math.cos(h) + sz * Math.sin(h), lead.pos.z - sx * Math.sin(h) + sz * Math.cos(h));
+    }
+  } else if (ai.retarget <= 0 || Math.hypot(ai.target.x - t.pos.x, ai.target.y - t.pos.z) < 12) {
     ai.retarget = rr(7, 13);
-    const want = rr(80, 160), a = Math.atan2(t.pos.x - pt.pos.x, t.pos.z - pt.pos.z) + rr(-0.9, 0.9);
-    ai.target.set(pt.pos.x + Math.sin(a) * want, pt.pos.z + Math.cos(a) * want);
+    const want = rr(80, 160), a = Math.atan2(t.pos.x - ref.pos.x, t.pos.z - ref.pos.z) + rr(-0.9, 0.9);
+    ai.target.set(ref.pos.x + Math.sin(a) * want, ref.pos.z + Math.cos(a) * want);
     const r = ai.target.length(); if (r > ARENA) ai.target.multiplyScalar(ARENA / r);
   }
   let tx = ai.target.x - t.pos.x, tz = ai.target.y - t.pos.z;
@@ -2592,22 +2703,24 @@ function updateAI(t, dt) {
   }
   const desired = Math.atan2(tx, tz), diff = wrapAngle(desired - t.heading), dTarget = Math.hypot(tx, tz);
   let throttle = Math.abs(diff) < 1.1 ? (dTarget > 10 ? 1 : 0) : 0.25, steer = clamp(diff * 2, -1, 1);
-  if (dist < 45) throttle = -0.6;
+  if (foe && dist < 45 && !following) throttle = -0.6;
+  if (following && dTarget < 8) throttle = 0;
   // stuck detection
   if (Math.abs(t.speed) < 0.6 && Math.abs(throttle) > 0.5) ai.stuck += dt; else ai.stuck = Math.max(0, ai.stuck - dt);
   if (ai.stuck > 1.8) { ai.reverseT = 1.8; ai.stuck = 0; ai.retarget = 0; }
   if (ai.reverseT > 0) { ai.reverseT -= dt; throttle = -1; steer = 0.8; }
   t.input.throttle = throttle; t.input.steer = steer;
   // gunnery
-  const tgt = _v2.copy(pt.pos); tgt.y += 1.5;
-  // lead the target slightly
-  const lead = dist / SHELL_SPEED; const pf = pt.forward(new THREE.Vector3());
-  tgt.x += pf.x * pt.speed * lead * 0.8; tgt.z += pf.z * pt.speed * lead * 0.8;
+  if (!foe) { aimTurret(t, _v2.copy(t.pos).addScaledVector(t.forward(_v3), 50).setY(t.pos.y + 2), dt, 0.75, 0.4); return; }
+  const fd = Math.hypot(foe.pos.x - t.pos.x, foe.pos.z - t.pos.z);
+  const tgt = _v2.copy(foe.pos); tgt.y += 1.5 * foe.size;
+  const lt = fd / SHELL_SPEED, pf = foe.forward(new THREE.Vector3());
+  tgt.x += pf.x * foe.speed * lt * 0.8; tgt.z += pf.z * foe.speed * lt * 0.8;
   const err = aimTurret(t, tgt.clone(), dt, 0.75, 0.4);
   const mz = t.muzzleWorld(new THREE.Vector3());
-  const los = dist < 340 && hasLOS(mz, _v1.copy(pt.pos).setY(pt.pos.y + 1.6));
+  const los = fd < 340 && hasLOS(mz, _v1.copy(foe.pos).setY(foe.pos.y + 1.6 * foe.size));
   ai.los = los ? ai.los + dt : 0;
-  if (los && err < 0.03 && t.reload <= 0 && ai.los > ai.fireDelay && player.tank.alive) t.fire();
+  if (los && err < 0.03 && t.reload <= 0 && ai.los > ai.fireDelay && foe.alive) t.fire();
 }
 
 // =====================================================================
@@ -2715,7 +2828,7 @@ function updateCamera(dt) {
   // aim assist: if the crosshair is near a visible enemy, lay the gun on its centre of mass
   let best = null, bestA = 1e9;
   for (const e of tanks) {
-    if (e.isPlayer || !e.alive) continue;
+    if (e.team !== 'red' || !e.alive) continue;
     const c = _v2.copy(e.pos); c.y += 1.3;
     const to = _v3.copy(c).sub(camera.position), d = to.length(); to.divideScalar(d);
     const ang = Math.acos(clamp(to.dot(_aimDir), -1, 1));
@@ -2763,7 +2876,7 @@ function updateMarkers() {
     _proj.project(camera);
     let x = (_proj.x * 0.5 + 0.5) * W, y = (-_proj.y * 0.5 + 0.5) * H;
     const behind = _proj.z > 1, off = behind || x < 0 || x > W || y < 0 || y > H;
-    m.classList.toggle('off', off); m.classList.toggle('lock', cam.lock === e);
+    m.classList.toggle('off', off); m.classList.toggle('lock', cam.lock === e); m.classList.toggle('ally', e.team === 'blue');
     if (off) {
       let dx = x - W / 2, dy = y - H / 2; if (behind) { dx = -dx; dy = -dy; }
       const a = Math.atan2(dy, dx), k = Math.min((W / 2 - 46) / Math.max(Math.abs(Math.cos(a)), 1e-4), (H / 2 - 46) / Math.max(Math.abs(Math.sin(a)), 1e-4));
@@ -2792,7 +2905,7 @@ function updateHUD(dt) {
   $('vHdg').textContent = String(Math.round(((-cam.yaw * 180 / Math.PI) % 360 + 360) % 360) % 360).padStart(3, '0');
   $('vAmmo').textContent = game.ammo;
   $('vWave').textContent = game.wave; $('vKills').textContent = game.kills; $('vScore').textContent = game.score;
-  $('vHost').textContent = tanks.filter((x) => !x.isPlayer && x.alive).length + game.toSpawn;
+  $('vHost').textContent = tanks.filter((x) => x.team === 'red' && x.alive).length + game.toSpawn;
   const rl = 1 - t.reload / t.reloadTime;
   hud.reloadBar.firstElementChild.style.width = (rl * 100).toFixed(1) + '%';
   hud.reloadBar.classList.toggle('loading', t.reload > 0);
@@ -2802,7 +2915,7 @@ function updateHUD(dt) {
   hud.heatBar.classList.toggle('hot', game.mgCool);
   // gun reticle
   const ipHit = predictImpact(t), ip = ipHit.point;
-  const onTarget = ipHit.type === 'tank' && ipHit.tank.alive && !ipHit.tank.isPlayer;
+  const onTarget = ipHit.type === 'tank' && ipHit.tank.alive && ipHit.tank.team === 'red';
   _proj.copy(ip).project(camera);
   const onScreen = _proj.z < 1;
   hud.gunMark.style.display = onScreen && t.alive ? '' : 'none';
@@ -2849,6 +2962,7 @@ function startGame() {
   for (const a of [...dmgDirs.children]) a.remove();
   setScreen(null);
   requestLock();
+  for (let i = 0; i < ALLY_SLOTS.length; i++) spawnAlly(i);
   nextWave();
 }
 function pauseGame() { if (game.mode !== 'play') return; game.mode = 'paused'; mouse.fire = mouse.zoom = false; setScreen('pause'); }
@@ -2944,7 +3058,7 @@ applyQuality();
 $('loading').hidden = true;
 setScreen('title');
 requestAnimationFrame(frame);
-window.__warzone = { game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse };
+window.__warzone = { game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y };
 </script>
 </body>
 </html>
