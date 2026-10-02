@@ -159,7 +159,10 @@ button.cta:focus-visible, .seg button:focus-visible { outline: 2px solid var(--h
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "postprocessing": "https://cdn.jsdelivr.net/npm/postprocessing@6.36.7/build/index.js",
+  "n8ao": "https://cdn.jsdelivr.net/npm/n8ao@1.9.4/dist/N8AO.js"
 } }
 </script>
 </head>
@@ -301,6 +304,9 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+// Screen-space ambient occlusion. Optional: if it fails to load the game still runs without it.
+let N8AOPass = null;
+try { ({ N8AOPass } = await import('n8ao')); } catch (e) { console.warn('Ambient occlusion unavailable', e); }
 
 // =====================================================================
 // Utilities
@@ -387,9 +393,9 @@ function heightToNormalTex(h, size, strength) {
 // Renderer, scene, quality
 // =====================================================================
 const QUALITY = {
-  low:   { ext: 65, pr: 1, shadow: 1024, grass: 0.25, bloom: false, smaa: false },
-  high:  { ext: 95, pr: Math.min(devicePixelRatio, 1.5), shadow: 2048, grass: 0.6, bloom: true, smaa: true },
-  ultra: { ext: 140, pr: Math.min(devicePixelRatio, 2), shadow: 4096, grass: 1, bloom: true, smaa: true },
+  low:   { ao: 0, ext: 65, pr: 1, shadow: 1024, grass: 0.25, bloom: false, smaa: false },
+  high:  { ao: 1, ext: 95, pr: Math.min(devicePixelRatio, 1.5), shadow: 2048, grass: 0.6, bloom: true, smaa: true },
+  ultra: { ao: 2, ext: 140, pr: Math.min(devicePixelRatio, 2), shadow: 4096, grass: 1, bloom: true, smaa: true },
 };
 const isTouch = matchMedia('(pointer: coarse)').matches;
 let qualityName = isTouch ? 'low' : 'high';
@@ -1259,7 +1265,7 @@ class ParticlePool {
         void main(){
           vec4 t = texture2D(map, vUv); float a = t.a * vC.a; if (a < 0.003) discard;
           float g = pow(max(dot(vDir, sunDir), 0.0), 5.0);
-          vec3 c = vC.rgb * t.rgb * vec3(1.1, 1.0, 0.9) + vec3(1.0, 0.6, 0.32) * g * 0.75 * (1.2 - t.a);
+          vec3 c = vC.rgb * t.rgb * vec3(1.1, 1.0, 0.9) + vec3(1.0, 0.6, 0.32) * g * 0.75 * (1.2 - t.a) * clamp(vC.r * 2.2, 0.15, 1.0);
           gl_FragColor = vec4(mix(c, fogColor, vFog), a);
         }`,
       transparent: true, depthWrite: false,
@@ -1718,6 +1724,45 @@ const TANK_GEO_E = (() => {
   return g;
 })();
 for (const G of [TANK_GEO, TANK_GEO_E]) for (const k of ['hullCamo', 'turCamo']) worldUV(G[k], 0.22);
+TANK_GEO.L.belt = { len: 7.0, r: 0.45, thick: 0.1 }; TANK_GEO_E.L.belt = { len: 7.1, r: 0.5, thick: 0.1 };
+TANK_GEO.L.decal = [1.71, 0.42, -0.95, 1.668]; TANK_GEO_E.L.decal = [1.6, 0.42, -0.3, 1.57];
+// raised steel shoe with two grousers, laid on top of the belt so tracks read as real links
+const SHOE_GEO = merge([new THREE.BoxGeometry(0.66, 0.035, 0.27), new THREE.BoxGeometry(0.6, 0.05, 0.05).translate(0, 0.035, -0.07), new THREE.BoxGeometry(0.6, 0.05, 0.05).translate(0, 0.035, 0.07), new THREE.BoxGeometry(0.12, 0.08, 0.12).translate(0, -0.06, 0)]);
+const shoeMat = new THREE.MeshStandardMaterial({ color: 0x45423b, roughness: 0.5, metalness: 0.75, map: detailTex });
+function beltPoint(s, len, r) {
+  const L = len - 2 * r, P = 2 * L + 2 * Math.PI * r; s = ((s % P) + P) % P;
+  if (s < L) return [-L / 2 + s, -r, 0, -1];
+  if (s < L + Math.PI * r) { const t = -Math.PI / 2 + (s - L) / r; return [L / 2 + r * Math.cos(t), r * Math.sin(t), Math.cos(t), Math.sin(t)]; }
+  if (s < 2 * L + Math.PI * r) return [L / 2 - (s - L - Math.PI * r), r, 0, 1];
+  const t = Math.PI / 2 + (s - 2 * L - Math.PI * r) / r; return [-L / 2 + r * Math.cos(t), r * Math.sin(t), Math.cos(t), Math.sin(t)];
+}
+const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new THREE.Vector3(), _ss = new THREE.Vector3(1, 1, 1), _sx = new THREE.Vector3(1, 0, 0);
+function layShoes(tr, dist) {
+  const { len, r, thick } = tr.belt, n = tr.shoes.count, P = 2 * (len - 2 * r) + 2 * Math.PI * r;
+  for (let i = 0; i < n; i++) {
+    const [z, y, nz, ny] = beltPoint(i * P / n - dist, len, r), off = thick / 2 + 0.02;
+    _sp.set(0, y + ny * off, z + nz * off); _sq.setFromAxisAngle(_sx, Math.atan2(nz, ny));
+    tr.shoes.setMatrixAt(i, _sm.compose(_sp, _sq, _ss));
+  }
+  tr.shoes.instanceMatrix.needsUpdate = true;
+}
+function numberDecal(text, color) {
+  const t = canvasTex(128, (g, sz) => {
+    g.clearRect(0, 0, sz, sz);
+    g.font = '900 54px "Big Shoulders Stencil Display", Impact, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = color; g.fillText(text, sz / 2, sz / 2 + 4);
+    // paint wear: knock small chips out of the stencil
+    g.globalCompositeOperation = 'destination-out';
+    const rnd = mulberry32(text.length * 31 + text.charCodeAt(0));
+    for (let i = 0; i < 70; i++) { g.beginPath(); g.arc(rnd() * sz, rnd() * sz, rnd() * 2.6, 0, 6.28); g.fill(); }
+  });
+  return new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.4, roughness: 0.75, polygonOffset: true, polygonOffsetFactor: -2 });
+}
+const crewMat = new THREE.MeshStandardMaterial({ color: 0x4f5536, roughness: 0.95 });
+const skinMat = new THREE.MeshStandardMaterial({ color: 0xc69a78, roughness: 0.7 });
+const CREW_GEO = { body: new THREE.CapsuleGeometry(0.17, 0.26, 4, 10).translate(0, 1.2, 0), head: new THREE.SphereGeometry(0.105, 14, 10).translate(0, 1.5, 0.01), helmet: new THREE.SphereGeometry(0.135, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55).scale(1, 0.9, 1.08).translate(0, 1.53, 0), arms: merge([new THREE.CapsuleGeometry(0.055, 0.28, 3, 6).rotateZ(1.1).translate(0.22, 1.2, 0.12), new THREE.CapsuleGeometry(0.055, 0.28, 3, 6).rotateZ(-1.1).translate(-0.22, 1.2, 0.12)]) };
+const JERRY_GEO = merge([new THREE.BoxGeometry(0.17, 0.46, 0.33), new THREE.BoxGeometry(0.05, 0.06, 0.2).translate(0, 0.26, 0)]);
+let decalSeq = 11;
 
 const SCHEMES = {
   player: { camo: camoTexture([0x76804a, 0x55603a, 0x3a3a2e, 0x968860], 101) },
@@ -1742,8 +1787,19 @@ const glassMat = new THREE.MeshStandardMaterial({ color: 0x0b1a26, roughness: 0.
 const tarpMat = new THREE.MeshStandardMaterial({ color: 0x5b5a3f, roughness: 1 });
 const lampMat = new THREE.MeshStandardMaterial({ color: 0xfff1d0, emissive: 0xffe2a8, emissiveIntensity: 2.5 });
 const wreckMat = new THREE.MeshStandardMaterial({ color: 0x1b1714, roughness: 0.95, metalness: 0.2, map: detailTex });
+const armourNormal = (() => {
+  const N = 512, h = new Float32Array(N * N), grit = tileNoise(N, 32, 3, 909);
+  for (let i = 0; i < N * N; i++) h[i] = grit[i] * 0.25;
+  const seam = (x0, y0, x1, y1, depth, w) => { const len = Math.hypot(x1 - x0, y1 - y0); for (let t = 0; t <= len; t++) { const x = Math.round(x0 + (x1 - x0) * t / len), y = Math.round(y0 + (y1 - y0) * t / len); for (let k = -w; k <= w; k++) { const xx = (x + (y1 === y0 ? 0 : k) + N) % N, yy = (y + (y1 === y0 ? k : 0) + N) % N; h[yy * N + xx] += depth * (1 - Math.abs(k) / (w + 1)); } } };
+  const rivet = (cx, cy, r) => { for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) { const d = Math.hypot(x, y); if (d <= r) h[((cy + y + N) % N) * N + (cx + x + N) % N] += 0.9 * Math.sqrt(1 - (d / r) ** 2); } };
+  // panel layout: big plates with seams, a row of bolt heads along each seam, a few weld beads
+  for (const x of [0, 192, 352]) { seam(x, 0, x, N, -1.2, 1); for (let y = 14; y < N; y += 28) rivet(x + 9, y, 3); }
+  for (const y of [0, 160, 330]) { seam(0, y, N, y, -1.2, 1); for (let x = 20; x < N; x += 30) rivet(x, y + 9, 3); }
+  seam(60, 250, 300, 250, 0.7, 2); seam(420, 40, 420, 300, 0.7, 2);
+  return heightToNormalTex(h, N, 2.5);
+})();
 for (const k in SCHEMES) {
-  SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.64, metalness: 0.12, normalMap: detailNormal, normalScale: new THREE.Vector2(0.25, 0.25) });
+  SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.62, metalness: 0.14, normalMap: armourNormal, normalScale: new THREE.Vector2(0.55, 0.55) });
   // hull variant: dried mud and dust caked onto the lower hull and running gear
   const hm = SCHEMES[k].hullMat = SCHEMES[k].mat.clone();
   hm.onBeforeCompile = (sh) => {
@@ -1772,7 +1828,12 @@ function buildTankVisual(scheme, design) {
     const tex = treadTex.clone(); tex.needsUpdate = true;
     const tm = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8, metalness: 0.45, bumpMap: tex, bumpScale: 2 });
     const belt = mk(G.belt, tm); belt.position.set(sx * 1.55, L.beltY, 0);
-    tracks.push({ mesh: belt, tex });
+    const P = 2 * (L.belt.len - 2 * L.belt.r) + 2 * Math.PI * L.belt.r;
+    const shoes = new THREE.InstancedMesh(SHOE_GEO, shoeMat, Math.round(P / 0.3)); shoes.receiveShadow = true; shoes.frustumCulled = false;
+    belt.add(shoes);
+    const tr = { mesh: belt, tex, shoes, belt: L.belt };
+    layShoes(tr, 0);
+    tracks.push(tr);
     const W = L.wheel;
     for (let i = 0; i < W.n; i++) { const w = mk(G.wheel, wheelMat); w.position.set(sx * 1.55, W.y, W.start + i * W.step); wheels.push({ m: w, r: W.r }); }
     const sp = mk(G.sprocket, darkMetal); sp.position.set(sx * 1.55, L.sprocket.y, L.sprocket.z); wheels.push({ m: sp, r: L.sprocket.r });
@@ -1791,7 +1852,18 @@ function buildTankVisual(scheme, design) {
   const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, L.muzzleZ); barrel.add(muzzle);
   const coax = new THREE.Object3D(); coax.position.set(...L.coax); gunPivot.add(coax);
   const sight = new THREE.Object3D(); sight.position.set(...L.sight); turret.add(sight);
-  return { root, turret, gunPivot, barrel, muzzle, coax, sight, tracks, wheels, antennas, meshes, lamps, L };
+  // tactical number on both turret sides
+  const extras = [];
+  const dm = numberDecal(design === 'enemy' ? String(200 + (decalSeq++ % 90)) : (scheme === 'player' ? 'A 11' : 'A ' + (decalSeq++ % 9 + 12)), design === 'enemy' ? '#e9e4d6' : '#e8e2c8');
+  for (const sgn of [-1, 1]) { const d = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), dm); const [x, y, z, ry] = L.decal; d.position.set(sgn * x, y, z); d.rotation.y = sgn * ry; turret.add(d); extras.push(d); }
+  if (design !== 'enemy') {
+    // tank commander standing in the open cupola
+    const crew = new THREE.Group(); crew.position.set(-0.62, 0, -0.55); turret.add(crew);
+    for (const [g, m] of [[CREW_GEO.body, crewMat], [CREW_GEO.head, skinMat], [CREW_GEO.helmet, crewMat], [CREW_GEO.arms, crewMat]]) mk(g, m, crew);
+    extras.push(crew);
+    for (const [x, z] of [[1.72, -3.0], [1.72, -2.62], [-1.72, -3.0]]) { const j = mk(JERRY_GEO, camo); j.position.set(x, 1.4, z); }
+  }
+  return { root, turret, gunPivot, barrel, muzzle, coax, sight, tracks, wheels, antennas, meshes, lamps, L, extras };
 }
 
 // =====================================================================
@@ -1876,6 +1948,7 @@ class Tank {
       this.recoil = damp(this.recoil, 0, 7, dt);
       v.barrel.position.z = -this.recoil;
       v.tracks[0].tex.offset.x = this.trackDist[0] / 0.42; v.tracks[1].tex.offset.x = this.trackDist[1] / 0.42;
+      for (let k = 0; k < 2; k++) if (v.tracks[k].laid !== this.trackDist[k]) { v.tracks[k].laid = this.trackDist[k]; layShoes(v.tracks[k], this.trackDist[k]); }
       for (let i = 0; i < v.wheels.length; i++) { const w = v.wheels[i]; const side = i < v.wheels.length / 2 ? 0 : 1; w.m.rotation.x = this.trackDist[side] / w.r; }
       const sway = Math.sin(performance.now() * 0.004) * 0.02;
       for (const a of v.antennas) { a.rotation.x = lerp(a.rotation.x, -this.speed * 0.012 + this.pitchOff * 3 + sway, 0.2); a.rotation.z = this.turn * 0.06 + sway * 0.5; }
@@ -1990,8 +2063,9 @@ class Tank {
     sfx.explosion(p, 1.6);
     if (this.isPlayer) addShake(1.0); else addShake(clamp(1.4 - camera.position.distanceTo(p) / 120, 0, 0.8));
     for (const m of this.v.meshes) m.material = wreckMat;
-    for (const t of this.v.tracks) t.mesh.material = wreckMat;
+    for (const t of this.v.tracks) { t.mesh.material = wreckMat; t.shoes.material = wreckMat; }
     this.v.lamps.visible = false;
+    for (const e of this.v.extras) e.visible = false;
     // turret pops off
     const tw = this.v.turret;
     const wp = tw.getWorldPosition(new THREE.Vector3()), wq = tw.getWorldQuaternion(new THREE.Quaternion());
@@ -2302,13 +2376,22 @@ const sfx = (() => {
 // Post-processing
 // =====================================================================
 const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+let aoPass = null;
+if (N8AOPass) {
+  try {
+    aoPass = new N8AOPass(scene, camera, innerWidth, innerHeight);
+    Object.assign(aoPass.configuration, { aoRadius: 1.6, distanceFalloff: 1.0, intensity: 1.7, gammaCorrection: false, screenSpaceRadius: false, color: new THREE.Color(0x0b0d08) });
+    composer.addPass(aoPass);
+  } catch (e) { console.warn('Ambient occlusion disabled', e); aoPass = null; }
+}
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.55, 0.92);
 const shafts = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, sunPos: { value: new THREE.Vector2(0.5, 0.5) }, intensity: { value: 0 }, threshold: { value: 2.4 } },
+  uniforms: { tDiffuse: { value: null }, sunPos: { value: new THREE.Vector2(0.5, 0.5) }, intensity: { value: 0 }, threshold: { value: 2.4 }, flare: { value: 0 }, aspect: { value: innerWidth / innerHeight } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform vec2 sunPos; uniform float intensity, threshold; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform vec2 sunPos; uniform float intensity, threshold, flare, aspect; varying vec2 vUv;
     void main(){
       vec4 base = texture2D(tDiffuse, vUv);
       vec2 delta = (vUv - sunPos) / 56.0 * 0.85;
@@ -2322,7 +2405,33 @@ const shafts = new ShaderPass({
         acc += min(sm, vec3(8.0)) * smoothstep(threshold, threshold * 2.5, l) * decay;
         decay *= 0.962;
       }
-      gl_FragColor = vec4(base.rgb + acc / 56.0 * intensity * vec3(1.0, 0.8, 0.58), base.a);
+      vec3 outc = base.rgb + acc / 56.0 * intensity * vec3(1.0, 0.8, 0.58);
+      // lens flare: visibility measured from the sun's own pixels, so trees and hills block it
+      float onScr = step(0.0, sunPos.x) * step(sunPos.x, 1.0) * step(0.0, sunPos.y) * step(sunPos.y, 1.0);
+      float vis = 0.0;
+      for (int i = 0; i < 5; i++) {
+        vec2 o = vec2(float(i % 3) - 1.0, float(i / 3) - 0.5) * 0.004;
+        vec3 sc = texture2D(tDiffuse, clamp(sunPos + o, 0.0, 1.0)).rgb;
+        vis += smoothstep(threshold * 1.2, threshold * 4.0, dot(sc, vec3(0.2126, 0.7152, 0.0722)));
+      }
+      vis = vis / 5.0 * onScr * flare;
+      if (vis > 0.001) {
+        vec2 axis = vec2(0.5) - sunPos;
+        vec3 fl = vec3(0.0);
+        for (int i = 0; i < 6; i++) {
+          float fi = float(i);
+          vec2 c = sunPos + axis * (0.55 + fi * 0.38);
+          float rad = 0.018 + 0.03 * fract(fi * 0.618);
+          float d = length((vUv - c) * vec2(aspect, 1.0));
+          vec3 tint = mix(vec3(1.0, 0.55, 0.25), vec3(0.35, 0.7, 1.0), fract(fi * 0.37));
+          fl += tint * smoothstep(rad, rad * 0.3, d);
+        }
+        vec2 dv = (vUv - sunPos) * vec2(aspect, 1.0);
+        float streak = exp(-abs(dv.y) * 260.0) * exp(-abs(dv.x) * 2.2);
+        float glow = exp(-length(dv) * 9.0);
+        outc += (fl * 0.06 + vec3(1.0, 0.75, 0.5) * (streak * 0.9 + glow * 0.6)) * vis;
+      }
+      gl_FragColor = vec4(outc, base.a);
     }`,
 });
 composer.addPass(shafts);
@@ -2369,6 +2478,10 @@ function applyQuality() {
   if (sun.shadow.mapSize.x !== q.shadow) { sun.shadow.mapSize.set(q.shadow, q.shadow); sun.shadow.map?.dispose(); sun.shadow.map = null; }
   Object.assign(sun.shadow.camera, { left: -q.ext, right: q.ext, top: q.ext, bottom: -q.ext }); sun.shadow.camera.updateProjectionMatrix();
   bloom.enabled = q.bloom; smaa.enabled = q.smaa; shaftsAllowed = q.bloom;
+  if (aoPass) {
+    aoPass.enabled = q.ao > 0; renderPass.enabled = !aoPass.enabled;
+    if (q.ao > 0) { aoPass.configuration.halfRes = q.ao === 1; aoPass.setQualityMode(q.ao === 1 ? 'Low' : 'Medium'); }
+  }
   grassMesh.count = Math.floor(grassMax * q.grass);
   flowerMesh.count = Math.floor(flowerMax * q.grass);
   document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.q === qualityName)));
@@ -2385,6 +2498,8 @@ for (const [x, z, h] of [[-40, 40, 0.8], [150, 120, 2.2], [-210, 120, -1], [40, 
   tanks.pop();
   t.alive = false;
   for (const m of t.v.meshes) m.material = wreckMat;
+  for (const e of t.v.extras) e.visible = false;
+  for (const tr of t.v.tracks) tr.shoes.material = wreckMat;
   for (const tr of t.v.tracks) tr.mesh.material = wreckMat;
   t.v.lamps.visible = false;
   t.v.turret.rotation.set(rr(-0.1, 0.1), rr(-1, 1), rr(-0.15, 0.15));
@@ -3042,6 +3157,8 @@ function frame() {
     const facing = camera.getWorldDirection(_v1).dot(sunDir);
     const k = smoothstep(0.25, 0.85, facing) * (1 - cam.zoomAmt * 0.6);
     shafts.enabled = shaftsAllowed && k > 0.01;
+    shafts.uniforms.flare.value = cam.zoomAmt > 0.5 ? 0 : 1;
+    shafts.uniforms.aspect.value = innerWidth / innerHeight;
     if (shafts.enabled) {
       _proj.copy(camera.position).addScaledVector(sunDir, 1000).project(camera);
       shafts.uniforms.sunPos.value.set(_proj.x * 0.5 + 0.5, _proj.y * 0.5 + 0.5);
@@ -3058,7 +3175,7 @@ applyQuality();
 $('loading').hidden = true;
 setScreen('title');
 requestAnimationFrame(frame);
-window.__warzone = { game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y };
+window.__warzone = { game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, aoPass, renderPass };
 </script>
 </body>
 </html>
