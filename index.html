@@ -3489,10 +3489,19 @@ function pickEnemyKind(w) {
   for (const [k, wt] of pool) { r -= wt; if (r <= 0) return k; }
   return pool[0][0];
 }
+// the enemy attacks from one side: a front beyond the village, opposite where your force starts
+const ENEMY_FRONT = Math.PI / 4;
+function enemyFrontPoint(d0, d1, lim) {
+  const pe = playerEnt(), ox = pe ? pe.pos.x : -150, oz = pe ? pe.pos.z : -150;
+  const a = ENEMY_FRONT + rr(-0.55, 0.55), d = rr(d0, d1);
+  let x = ox + Math.cos(a) * d, z = oz + Math.sin(a) * d;
+  const r = Math.hypot(x, z); if (r > lim) { x *= lim / r; z *= lim / r; }
+  return [x, z];
+}
 function spawnEnemy() {
   const pt = playerEnt();
   for (let tries = 0; tries < 50; tries++) {
-    const a = rr(0, 6.28), r = rr(ARENA - 40, ARENA + 30), x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const [x, z] = enemyFrontPoint(280, 400, ARENA + 30);
     if (pt && Math.hypot(x - pt.pos.x, z - pt.pos.z) < 170) continue;
     if (inWater(x, z) || queryColliders(x, z, 6).some((c) => c.type === 'obb' || (c.r > 1.5 && !c.tree))) continue;
     const kind = pickEnemyKind(game.wave);
@@ -4456,7 +4465,7 @@ function spawnSquad(n, team = 'red') {
   for (let tries = 0; tries < 60; tries++) {
     let x, z;
     if (team === 'red') {
-      const a = rr(0, 6.28), r = rr(ARENA - 70, ARENA - 10); x = Math.cos(a) * r; z = Math.sin(a) * r;
+      [x, z] = enemyFrontPoint(220, 320, ARENA - 10);
       if (pe && Math.hypot(x - pe.pos.x, z - pe.pos.z) < 160) continue;
     } else {
       // friendly squads deploy around and behind the player
