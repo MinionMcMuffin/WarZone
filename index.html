@@ -304,6 +304,7 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
       <kbd>1 / 2 or Q</kbd><span>Rifle or anti-tank launcher</span>
       <kbd>R</kbd><span>Reload</span>
       <kbd>G</kbd><span>Throw a grenade</span>
+      <kbd>M</kbd><span>Show or hide target markers</span>
     </div>
     <div class="keys" id="keysTank">
       <kbd>W A S D</kbd><span>Drive and steer the hull</span>
@@ -311,6 +312,7 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
       <kbd>Left click</kbd><span>Fire main gun</span>
       <kbd>Right click / Shift</kbd><span>Gunner's sight (zoom)</span>
       <kbd>Space</kbd><span>Coaxial machine gun</span>
+      <kbd>M</kbd><span>Show or hide target markers</span>
       <kbd>Esc</kbd><span>Pause</span>
     </div>
     <div class="pick" role="group" aria-label="Choose your tank">
@@ -3420,6 +3422,7 @@ const mouse = { fire: false, zoom: false, locked: false, lockFailed: false };
 addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Escape' && game.mode === 'play' && !mouse.locked) pauseGame();
+  if (e.code === 'KeyM' && !e.repeat && game.mode === 'play') { showMarkers = !showMarkers; try { localStorage.setItem('warzone.markers', showMarkers ? '1' : '0'); } catch (er) { } feed(`Target markers ${showMarkers ? 'on' : 'off'} [M]`, false); }
   if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
 });
 addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -4980,7 +4983,11 @@ function updateInfantryCamera(dt) {
 const hud = { gunMark: $('gunMark'), reloadBar: $('reloadBar'), heatBar: $('heatBar'), loadState: $('loadState'), vig: $('vig') };
 const _proj = new THREE.Vector3();
 const markersEl = $('markers'), markerMap = new Map();
+// target boxes are off by default; M brings them back
+let showMarkers = false;
+try { showMarkers = localStorage.getItem('warzone.markers') === '1'; } catch (e) { }
 function updateMarkers() {
+  if (!showMarkers) { if (markerMap.size) { for (const m of markerMap.values()) m.remove(); markerMap.clear(); } return; }
   const W = innerWidth, H = innerHeight, f = H / 2 / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   const seen = new Set();
   for (const e of [...tanks, ...soldiers]) {

@@ -36,6 +36,7 @@ Each era is self-contained and has its own battlefield: sunny Italian summer for
 | Left click | Fire the main gun |
 | Right click / Shift | Gunner's sight (zoom) |
 | Space | Coaxial machine gun |
+| M | Show or hide target markers (off by default) |
 
 **Infantry**
 
@@ -48,6 +49,7 @@ Each era is self-contained and has its own battlefield: sunny Italian summer for
 | 1 / 2 or Q | Rifle or anti-tank launcher |
 | R | Reload |
 | G | Throw a grenade |
+| M | Show or hide target markers (off by default) |
 
 Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons.
 
