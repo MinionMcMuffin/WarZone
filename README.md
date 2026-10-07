@@ -54,7 +54,7 @@ Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons
 ## What's in it
 
 - Procedural 2 km valley with a lake, road, ruined village, forests, dense wind-blown 3D grass, wildflowers and burning wrecks
-- Golden-hour sky, image-based lighting, soft shadows with a far cascade out to the horizon, ambient occlusion, light shafts, lens flare, bloom and per-era colour grading
+- Raymarched volumetric clouds that cast drifting shadows, forested mountains with eroded rock, golden-hour sky, image-based lighting, soft shadows with a far cascade out to the horizon, ambient occlusion, light shafts, lens flare, bloom and per-era colour grading
 - Eighteen procedurally modelled tanks with animated tracks, crews, period insignia and paint
 - Ballistic gunnery, ricochets, armour zones, tank cook-offs, splash damage and tracers
 - Battle sizes from Standard to Epic: up to 50 enemy tanks and 100 enemy infantry at once, 8 allied tanks and well over a hundred soldiers

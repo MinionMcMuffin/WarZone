@@ -460,9 +460,9 @@ function heightToNormalTex(h, size, strength) {
 // Renderer, scene, quality
 // =====================================================================
 const QUALITY = {
-  low:   { far: 0, ng: 0, ao: 0, ext: 65, pr: 1, shadow: 1024, grass: 0.25, bloom: false, smaa: false },
-  high:  { far: 2048, ng: 0.45, ao: 1, ext: 95, pr: Math.min(devicePixelRatio, 1.5), shadow: 2048, grass: 0.6, bloom: true, smaa: true },
-  ultra: { far: 4096, ng: 1, ao: 2, ext: 140, pr: Math.min(devicePixelRatio, 2), shadow: 4096, grass: 1, bloom: true, smaa: true },
+  low:   { clouds: 0, far: 0, ng: 0, ao: 0, ext: 65, pr: 1, shadow: 1024, grass: 0.25, bloom: false, smaa: false },
+  high:  { clouds: 18, far: 2048, ng: 0.45, ao: 1, ext: 95, pr: Math.min(devicePixelRatio, 1.5), shadow: 2048, grass: 0.6, bloom: true, smaa: true },
+  ultra: { clouds: 30, far: 4096, ng: 1, ao: 2, ext: 140, pr: Math.min(devicePixelRatio, 2), shadow: 4096, grass: 1, bloom: true, smaa: true },
 };
 const isTouch = matchMedia('(pointer: coarse)').matches;
 let qualityName = isTouch ? 'low' : 'high';
@@ -541,6 +541,9 @@ scene.add(sunFar, sunFar.target);
       float sFar = cascK > 0.0 ? ${sh(1)} : 1.0;
       directLight.color *= mix( sNear, sFar, cascK );
     }
+    #ifdef CLOUD_SHADOWS
+    directLight.color *= cloudShade;
+    #endif
     RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
   #else
 ${body}
@@ -597,6 +600,128 @@ const clouds = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000).rotateX(-Mat
 clouds.position.y = 650;
 clouds.renderOrder = -1;
 scene.add(clouds);
+
+// Volumetric clouds: a raymarched cumulus layer between 700 m and 1400 m, built from a tiling 3D Perlin-Worley
+// noise volume and lit by the sun with a short shadow march, a forward-scattering phase and a powder term.
+// The same volume casts drifting cloud shadows onto the ground. The flat layer above remains for Low quality.
+const CLOUD_BOT = 700, CLOUD_TOP = 1400;
+const cloudNoise = (() => {
+  const S = 64, data = new Uint8Array(S * S * S), rnd = mulberry32(777);
+  const hash = (x, y, z, p, s) => { x = ((x % p) + p) % p; y = ((y % p) + p) % p; z = ((z % p) + p) % p; let h = (x * 374761393 + y * 668265263 + z * 1274126177 + s * 911) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295; };
+  const value = (x, y, z, p, s) => { // tiling value noise with period p cells
+    const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), xf = x - xi, yf = y - yi, zf = z - zi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
+    const L = (a, b, t) => a + (b - a) * t;
+    return L(L(L(hash(xi, yi, zi, p, s), hash(xi + 1, yi, zi, p, s), u), L(hash(xi, yi + 1, zi, p, s), hash(xi + 1, yi + 1, zi, p, s), u), v),
+      L(L(hash(xi, yi, zi + 1, p, s), hash(xi + 1, yi, zi + 1, p, s), u), L(hash(xi, yi + 1, zi + 1, p, s), hash(xi + 1, yi + 1, zi + 1, p, s), u), v), w);
+  };
+  const cells = (n) => { const pts = new Float32Array(n * n * n * 3); for (let i = 0; i < pts.length; i++) pts[i] = rnd(); return pts; };
+  const worley = (x, y, z, n, pts) => { // distance to the nearest feature point, tiling
+    const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z); let best = 9;
+    for (let dz = -1; dz <= 1; dz++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const cx = xi + dx, cy = yi + dy, cz = zi + dz, k = ((((cz % n) + n) % n) * n * n + (((cy % n) + n) % n) * n + (((cx % n) + n) % n)) * 3;
+      const ex = cx + pts[k] - x, ey = cy + pts[k + 1] - y, ez = cz + pts[k + 2] - z, d = ex * ex + ey * ey + ez * ez;
+      if (d < best) best = d;
+    }
+    return Math.sqrt(best);
+  };
+  const w4 = cells(4), w8 = cells(8), w16 = cells(16);
+  for (let z = 0; z < S; z++) for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const fx = x / S, fy = y / S, fz = z / S;
+    let fb = 0, amp = 0.5, tot = 0;
+    for (let o = 0, p = 4; o < 4; o++, p *= 2) { fb += value(fx * p, fy * p, fz * p, p, o) * amp; tot += amp; amp *= 0.5; }
+    fb /= tot;
+    const wo = 1 - (worley(fx * 4, fy * 4, fz * 4, 4, w4) * 0.625 + worley(fx * 8, fy * 8, fz * 8, 8, w8) * 0.25 + worley(fx * 16, fy * 16, fz * 16, 16, w16) * 0.125);
+    // Perlin-Worley: billowy cells carved out of the fbm
+    const pw = clamp((fb - (1 - wo)) / Math.max(1e-3, wo) * 0.5 + wo * 0.55, 0, 1);
+    data[(z * S + y) * S + x] = Math.round(clamp(pw / 0.6, 0, 1) * 255); // stretched so the median sits near 0.45
+  }
+  const t = new THREE.Data3DTexture(data, S, S, S);
+  t.format = THREE.RedFormat; t.type = THREE.UnsignedByteType;
+  t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping; t.minFilter = t.magFilter = THREE.LinearFilter; t.unpackAlignment = 1; t.needsUpdate = true;
+  return t;
+})();
+const cloudU = { cloudNoise: { value: cloudNoise }, cloudTime: { value: 0 }, cloudCover: { value: 0.45 }, cloudShadowK: { value: 0 } };
+const CLOUD_GLSL = `
+  precision highp sampler3D;
+  uniform sampler3D cloudNoise; uniform float cloudTime, cloudCover, cloudShadowK;
+  float cloudDensity(vec3 p) {
+    vec3 q = p * 0.00022 + vec3(cloudTime * 0.0011, 0.0, cloudTime * 0.0005);
+    float h = clamp((p.y - ${CLOUD_BOT.toFixed(1)}) / ${(CLOUD_TOP - CLOUD_BOT).toFixed(1)}, 0.0, 1.0);
+    float shape = smoothstep(0.0, 0.1, h) * smoothstep(1.0, 0.35, h);
+    float base = texture(cloudNoise, q).r;
+    float big = texture(cloudNoise, q * 0.27 + 0.5).r;
+    float cov = clamp(cloudCover * (0.75 + big * 0.6), 0.0, 1.0);
+    float d = (base * shape - (1.0 - cov)) / max(cov, 0.08);
+    if (d <= 0.0) return 0.0;
+    float det = texture(cloudNoise, q * 4.7 + vec3(0.37, cloudTime * 0.002, 0.11)).r;
+    d -= (1.0 - det) * 0.4 * (1.0 - clamp(d * 2.0, 0.0, 1.0));
+    return clamp(d, 0.0, 1.0);
+  }
+  float cloudShadowAt(vec3 w) {
+    vec3 sd = normalize(vec3(${sunDir.x.toFixed(4)}, ${sunDir.y.toFixed(4)}, ${sunDir.z.toFixed(4)}));
+    vec3 p = w + sd * ((${((CLOUD_BOT + CLOUD_TOP) * 0.45).toFixed(1)} - w.y) / sd.y);
+    float d = cloudDensity(p) + cloudDensity(p + sd * 160.0);
+    return 1.0 - clamp(d * 1.1, 0.0, 1.0) * 0.72 * cloudShadowK;
+  }
+`;
+const volClouds = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
+  uniforms: { ...cloudU, sunDir: { value: sunDir }, lit: { value: new THREE.Color(2.4, 1.6, 1.0) }, shade: { value: new THREE.Color(0.5, 0.45, 0.45) }, haze: { value: new THREE.Color(0xb7b4a8) }, steps: { value: 28 } },
+  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix*vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`,
+  fragmentShader: CLOUD_GLSL + `
+    varying vec3 vW; uniform vec3 sunDir, lit, shade, haze; uniform float steps;
+    float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * c, 1.5); }
+    void main() {
+      vec3 ro = cameraPosition, rd = normalize(vW - cameraPosition);
+      if (rd.y < 0.015) discard;
+      float t0 = max((${CLOUD_BOT.toFixed(1)} - ro.y) / rd.y, 0.0), t1 = (${CLOUD_TOP.toFixed(1)} - ro.y) / rd.y;
+      float fade = 1.0 - smoothstep(4500.0, 7800.0, t0);
+      if (fade <= 0.0) discard;
+      float len = min(t1 - t0, 4200.0), dt = len / steps;
+      float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+      float cosA = dot(rd, sunDir);
+      float phase = mix(hg(cosA, 0.55), hg(cosA, -0.25), 0.4) * 0.5 + 0.35;
+      float T = 1.0; vec3 C = vec3(0.0);
+      for (int i = 0; i < 48; i++) {
+        if (float(i) >= steps || T < 0.02) break;
+        vec3 p = ro + rd * (t0 + (float(i) + jit) * dt);
+        float d = cloudDensity(p);
+        if (d > 0.002) {
+          float ld = cloudDensity(p + sunDir * 40.0) + cloudDensity(p + sunDir * 120.0) + cloudDensity(p + sunDir * 260.0) * 0.8 + cloudDensity(p + sunDir * 480.0) * 0.6;
+          float sunT = exp(-ld * 1.5) * 0.85 + 0.15 * exp(-ld * 0.25);
+          float powder = 1.0 - exp(-d * 6.0);
+          float h = clamp((p.y - ${CLOUD_BOT.toFixed(1)}) / ${(CLOUD_TOP - CLOUD_BOT).toFixed(1)}, 0.0, 1.0);
+          vec3 amb = shade * (0.55 + 0.9 * h);
+          vec3 L = lit * sunT * phase * (0.45 + 0.55 * powder) * 1.6 + amb;
+          float a = 1.0 - exp(-d * dt * 0.022);
+          C += T * a * L; T *= 1.0 - a;
+        }
+      }
+      float A = (1.0 - T) * fade;
+      if (A < 0.003) discard;
+      vec3 col = C / max(1.0 - T, 1e-3);
+      col = mix(col, haze * vec3(0.95, 1.0, 1.08), smoothstep(1500.0, 7000.0, t0) * 0.55);
+      gl_FragColor = vec4(col, A);
+    }`,
+});
+const flatCloudMat = clouds.material;
+function setCloudMode(vol) {
+  clouds.material = vol ? volClouds : flatCloudMat;
+  clouds.position.y = vol ? CLOUD_BOT : 650;
+  cloudU.cloudShadowK.value = vol ? 1 : 0;
+}
+// cloud shadows: dim the sun on any lit material by sampling the cloud volume along the sun ray
+function withCloudShadows(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    Object.assign(sh.uniforms, cloudU);
+    sh.vertexShader = 'varying vec3 vCloudW;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvCloudW = worldPosition.xyz;');
+    sh.fragmentShader = '#define CLOUD_SHADOWS\nvarying vec3 vCloudW;\n' + CLOUD_GLSL + sh.fragmentShader.replace('#include <lights_fragment_begin>', 'float cloudShade = cloudShadowAt(vCloudW);\n#include <lights_fragment_begin>');
+  };
+  return mat;
+}
 
 // =====================================================================
 // Terrain
@@ -753,9 +878,22 @@ const TF = new Float32Array((SEG + 1) * (SEG + 1) * 11), TAO = new Float32Array(
         float rk = smoothstep(0.2, 0.42, slope + (t2.r - 0.85) * 0.4);
         diffuseColor.rgb *= mix(ground, rock, rk);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.43, 0.41, 0.38) * rock, rk * 0.55);
-      #endif`);
+        // gullies: dark streaks running down steep rock faces
+        float gully = texture2D(map, vec2((vTW.x + vTW.z) * 0.018, vTW.y * 0.004)).r;
+        diffuseColor.rgb *= 1.0 - rk * smoothstep(0.55, 0.3, gully) * 0.35;
+      #endif`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          // large-scale erosion relief on slopes, from the gradient of the detail texture
+          vec2 uvM = vTW.xz * 0.011; float e = 0.004;
+          float h0 = texture2D(map, uvM).r, hx = texture2D(map, uvM + vec2(e, 0.0)).r, hz = texture2D(map, uvM + vec2(0.0, e)).r;
+          float h1 = texture2D(map, uvM * 3.1).r, h1x = texture2D(map, uvM * 3.1 + vec2(e, 0.0)).r, h1z = texture2D(map, uvM * 3.1 + vec2(0.0, e)).r;
+          vec3 gW = vec3(h0 - hx + (h1 - h1x) * 0.5, 0.0, h0 - hz + (h1 - h1z) * 0.5) * 10.0;
+          float rockW = smoothstep(0.1, 0.35, 1.0 - normalize(vTN).y);
+          normal = normalize(normal + (viewMatrix * vec4(gW * rockW, 0.0)).xyz);
+        }`);
   };
-  terrain = new THREE.Mesh(g, mat);
+  terrain = new THREE.Mesh(g, withCloudShadows(mat));
   terrain.receiveShadow = true;
   scene.add(terrain);
 }
@@ -944,7 +1082,7 @@ const FOLIAGE = {};
 {
   const barkMat = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.95 });
   const types = [{ parts: makePineParts(), mat: makeFoliageMat(needleTex, 0.01) }, { parts: makeBroadParts(), mat: makeFoliageMat(leafTex, 0.014) }];
-  FOLIAGE.pine = types[0].mat; FOLIAGE.leaf = types[1].mat;
+  FOLIAGE.pine = withCloudShadows(types[0].mat); FOLIAGE.leaf = withCloudShadows(types[1].mat); withCloudShadows(barkMat);
   const counts = [1150, 420];
   const placed = [[], []];
   let tries = 0;
@@ -991,6 +1129,48 @@ const FOLIAGE = {};
     }
   }
   col.needsUpdate = true;
+}
+// Mountain forests: thousands of lighter pines climbing the slopes around the valley, split into sectors so the
+// camera and shadow frustums can cull whole stands at once.
+{
+  const cards = [];
+  for (let w = 0; w < 7; w++) {
+    const t = w / 7, y = 2 + t * 8.2, L = lerp(3.0, 0.7, t), nb = 4;
+    for (let b = 0; b < nb; b++) {
+      const a = b / nb * 6.28 + w * 1.1;
+      for (const cross of [Math.PI / 2, 0.2]) {
+        const card = new THREE.PlaneGeometry(L, lerp(1.8, 1.0, t)); card.translate(L / 2, 0, 0);
+        card.rotateX(cross); card.rotateZ(-0.25 - (1 - t) * 0.2); card.rotateY(a); card.translate(0, y, 0);
+        paintGeo(card, (c, x, yy, z) => { const ao = clamp(0.45 + Math.hypot(x, z) * 0.2 + t * 0.35, 0.45, 1.1); c.setRGB(ao, ao, ao); });
+        cards.push(card);
+      }
+    }
+  }
+  const trunk = new THREE.CylinderGeometry(0.12, 0.3, 4, 5).translate(0, 2, 0); paintGeo(trunk, (c) => c.setRGB(0.3, 0.24, 0.18));
+  const geo = merge(cards); crownNormals(geo, 0, 5.5, 0, 0.35);
+  const SECT = 10, lists = Array.from({ length: SECT }, () => []);
+  const rr2 = mulberry32(4242);
+  for (let k = 0; k < 26000; k++) {
+    const a = rr2() * 6.283, r = ARENA + 40 + Math.sqrt(rr2()) * 560, x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (Math.abs(x) > HALF - 12 || Math.abs(z) > HALF - 12) continue;
+    const h = terrainHeight(x, z); if (h > 172 + fbm(x * 0.01, z * 0.01, 2) * 18) continue;
+    const ny = terrainNormal(x, z).y; if (ny < 0.55) continue;
+    if (fbm(x * 0.005 + 7, z * 0.005 - 3, 3) < -0.12 - (1 - ny) * 0.3) continue; // stands and clearings
+    if (inWater(x, z) || roadDist(x, z) < 12) continue;
+    lists[Math.floor(a / 6.2832 * SECT) % SECT].push([x, h - 0.3, z, lerp(0.85, 1.55, rr2()), rr2() * 6.28]);
+  }
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), col = new THREE.Color();
+  for (const list of lists) {
+    if (!list.length) continue;
+    const fm = new THREE.InstancedMesh(geo, FOLIAGE.pine, list.length), tm = new THREE.InstancedMesh(trunk, FOLIAGE.pine.userData.trunkMat || (FOLIAGE.pine.userData.trunkMat = withCloudShadows(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))), list.length);
+    list.forEach(([x, y, z, sc, rot], i) => {
+      m.compose(new THREE.Vector3(x, y, z), q.setFromAxisAngle(up, rot), new THREE.Vector3(sc, sc * lerp(0.9, 1.2, (rot * 7) % 1), sc));
+      fm.setMatrixAt(i, m); tm.setMatrixAt(i, m);
+      fm.setColorAt(i, col.setRGB(lerp(0.7, 0.95, (rot * 3) % 1), lerp(0.9, 1.12, (rot * 5) % 1), lerp(0.6, 0.8, (rot * 11) % 1)));
+    });
+    for (const mm of [fm, tm]) { mm.castShadow = true; mm.receiveShadow = true; mm.computeBoundingSphere(); scene.add(mm); }
+    tm.castShadow = false;
+  }
 }
 function setTreeMatrix(tr) {
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), tr.rot);
@@ -1043,7 +1223,7 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
     g.clearRect(0, 0, s, s);
     const rnd = mulberry32(21);
     for (let i = 0; i < 46; i++) {
-      const x = s * (0.08 + rnd() * 0.84), h = s * (0.45 + rnd() * 0.55), w = s * (0.018 + rnd() * 0.022), lean = (rnd() - 0.5) * s * 0.25;
+      const x = s * (0.08 + rnd() * 0.84), env = 1 - Math.pow(Math.abs(x / s - 0.5) * 2, 1.6) * 0.7, h = s * (0.35 + rnd() * 0.6) * env, w = s * (0.018 + rnd() * 0.022), lean = (rnd() - 0.5) * s * 0.25;
       const gr = g.createLinearGradient(0, s, 0, s - h);
       const tone = rnd();
       gr.addColorStop(0, `rgb(${40 + tone * 20},${52 + tone * 18},${22})`);
@@ -1063,10 +1243,13 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
       #include <begin_vertex>
       vec3 ip = instanceMatrix[3].xyz;
       float w = sin(uTime*1.9 + ip.x*0.21 + ip.z*0.13) + 0.5*sin(uTime*3.7 + ip.x*0.7);
-      transformed.x += w * 0.18 * position.y; transformed.z += w * 0.09 * position.y;`);
+      transformed.x += w * 0.18 * position.y; transformed.z += w * 0.09 * position.y;
+      // tufts shrink into the ground with distance; the terrain's own grass colour takes over
+      float gfade = 1.0 - smoothstep(55.0, 115.0, distance(ip, cameraPosition));
+      transformed *= vec3(mix(0.4, 1.0, gfade), gfade, mix(0.4, 1.0, gfade));`);
   };
   const MAXG = 70000;
-  grassMesh = new THREE.InstancedMesh(geo, mat, MAXG);
+  grassMesh = new THREE.InstancedMesh(geo, withCloudShadows(mat), MAXG);
   grassMesh.receiveShadow = true;
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
   let n = 0, tries = 0;
@@ -1124,20 +1307,18 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
   flowerMax = fn; flowerMesh.count = fn;
   scene.add(flowerMesh);
 
-  // Low shrubs scattered between the trees
-  const bparts = [];
-  const bc0 = new THREE.Color(0x2f3d1c), bc1 = new THREE.Color(0x5f6a30);
-  for (let i = 0; i < 5; i++) {
-    const b = new THREE.IcosahedronGeometry(R(0.55, 0.85), 1), bp = b.attributes.position;
-    for (let k = 0; k < bp.count; k++) { const f = 1 + 0.22 * noise2(bp.getX(k) * 2 + i * 3, bp.getY(k) * 2 + bp.getZ(k)); bp.setXYZ(k, bp.getX(k) * f, bp.getY(k) * f * 0.8, bp.getZ(k) * f); }
-    b.computeVertexNormals();
-    const a = i / 5 * 6.28; b.translate(i ? Math.cos(a) * 0.6 : 0, i ? R(0.45, 0.7) : 0.85, i ? Math.sin(a) * 0.6 : 0);
-    paintGeo(b, (c, x, y) => c.copy(bc0).lerp(bc1, clamp(y / 1.4, 0, 1)));
-    bparts.push(b);
+  // Low shrubs scattered between the trees: leaf-cluster cards around a few stems, shaded like a small canopy
+  const bparts = [], bq = new THREE.Quaternion(), bd = new THREE.Vector3(), bz = new THREE.Vector3(0, 0, 1);
+  for (let i = 0; i < 26; i++) {
+    bd.set(R(-1, 1), R(-0.2, 1), R(-1, 1)).normalize();
+    const c = new THREE.PlaneGeometry(1.15, 1.15);
+    c.rotateZ(R(0, 6.28)); bq.setFromUnitVectors(bz, bd); c.applyQuaternion(bq);
+    c.translate(bd.x * 0.62, 0.55 + bd.y * 0.5, bd.z * 0.62);
+    paintGeo(c, (cc, x, y, z) => { const ao = clamp(0.38 + Math.hypot(x, (y - 0.5) * 1.3, z) * 0.6, 0.38, 1.05); cc.setRGB(ao, ao, ao); });
+    bparts.push(c);
   }
-  const bushGeo = merge(bparts);
-  const bushMat = FOLIAGE.bush = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
-  bushMat.onBeforeCompile = mat.onBeforeCompile;
+  const bushGeo = merge(bparts); crownNormals(bushGeo, 0, 0.45, 0, 0.9);
+  const bushMat = FOLIAGE.bush = withCloudShadows(makeFoliageMat(leafTex, 0.03));
   const BMAX = 1800, bush = new THREE.InstancedMesh(bushGeo, bushMat, BMAX);
   let bn = 0, btries = 0;
   const bcol = new THREE.Color();
@@ -1233,6 +1414,7 @@ const NG_R = 40, NG_MAX = 90000;
   const mesh = new THREE.Mesh(g, mat);
   mesh.frustumCulled = false; mesh.receiveShadow = true;
   scene.add(mesh);
+  withCloudShadows(mesh.material);
   nearGrass = { mesh, geo: g, tankU };
 }
 function updateNearGrass() {
@@ -2252,11 +2434,11 @@ const ERAS = {
   ww2: { label: 'WW2 · 1944', where: 'Gothic Line · Italian Apennines · 1944', blue: ['sherman', 'cromwell', 'churchill'], wreck: 'pz4', shell: 240,
     pool: (w) => [['pz4', 6], ...(w >= 2 ? [['panther', 2 + w * 0.4]] : []), ...(w >= 3 ? [['tiger', 0.6 + w * 0.3]] : [])],
     brief: 'You command an Allied armoured platoon pushing up a valley in the Apennines. German Panzer IVs, Panthers and Tigers hold the high ground, with Grenadiers dug in around them.',
-    tint: [1.05, 1.0, 0.88], sat: 0.8 },
+    tint: [1.03, 1.0, 0.93], sat: 0.93 },
   korea: { label: 'Korea · 1951', where: 'Iron Triangle · Central Korea · 1951', blue: ['pershing', 'm46', 'chaffee'], wreck: 't3485', shell: 260,
     pool: () => [['t3485', 1]],
     brief: 'You command a UN armoured platoon holding a mountain valley. KPA T-34-85s lead the push, with waves of PVA infantry armed with PPSh-41s close behind.',
-    tint: [1.03, 1.0, 0.9], sat: 0.84 },
+    tint: [1.02, 1.0, 0.94], sat: 0.92 },
   coldwar: { label: 'Cold War · 1985', where: 'Fulda Gap · West Germany · 1985', blue: ['m1ip', 'leo2a4', 'm60'], wreck: 't64b', shell: 310,
     pool: (w) => [['t72a', 5], ['t64b', 4], ...(w >= 2 ? [['t80b', 2 + w * 0.4]] : [])],
     brief: 'The Cold War has gone hot. You command a NATO platoon holding the Fulda Gap against Soviet T-64Bs, T-72As and T-80Bs and their motor-rifle infantry.',
@@ -2303,7 +2485,7 @@ function addDust(sh) {
 }
 for (const k in SCHEMES) {
   SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.66, metalness: 0.1, normalMap: armourNormal, normalScale: new THREE.Vector2(0.55, 0.55) });
-  SCHEMES[k].mat.color.setScalar(1.22);
+  SCHEMES[k].mat.color.setScalar(1.5); SCHEMES[k].mat.envMapIntensity = 1.35;
   SCHEMES[k].mat.onBeforeCompile = (sh) => addDust(sh);
   // hull variant: dried mud and dust caked onto the lower hull and running gear
   const hm = SCHEMES[k].hullMat = SCHEMES[k].mat.clone();
@@ -2318,6 +2500,7 @@ for (const k in SCHEMES) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.97, mud);');
   };
 }
+for (const k in SCHEMES) { withCloudShadows(SCHEMES[k].mat); withCloudShadows(SCHEMES[k].hullMat); }
 
 function buildTankVisual(scheme, design, team, isPlayer, mark) {
   const G = DESIGNS[design], L = G.L;
@@ -3004,10 +3187,15 @@ const grade = new ShaderPass({
       col.r = texture2D(tDiffuse, vUv + c * ca).r;
       col.g = texture2D(tDiffuse, vUv).g;
       col.b = texture2D(tDiffuse, vUv - c * ca).b;
+      // contrast-adaptive sharpening: restores crisp edges after anti-aliasing
+      vec2 px = 1.0 / res;
+      vec3 nb = texture2D(tDiffuse, vUv + vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv - vec2(px.x, 0.0)).rgb + texture2D(tDiffuse, vUv + vec2(0.0, px.y)).rgb + texture2D(tDiffuse, vUv - vec2(0.0, px.y)).rgb;
+      vec3 hp = col - nb * 0.25;
+      col = max(col + hp * 0.45 / (1.0 + 6.0 * abs(hp)), 0.0);
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
       // vibrance: lift muted colours more than already-saturated ones
       float sat = max(max(col.r, col.g), col.b) - min(min(col.r, col.g), col.b);
-      col = mix(vec3(l), col, 1.18 + 0.25 * (1.0 - smoothstep(0.0, 0.5, sat)));
+      col = mix(vec3(l), col, 1.06 + 0.16 * (1.0 - smoothstep(0.0, 0.5, sat)));
       // split tone: cool shadows, warm highlights
       col += vec3(-0.012, 0.0, 0.018) * (1.0 - smoothstep(0.0, 0.45, l)) + vec3(0.02, 0.008, -0.015) * smoothstep(0.5, 1.0, l);
       col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, eraSat) * eraTint;
@@ -3034,6 +3222,7 @@ function applyQuality() {
   if (sun.shadow.mapSize.x !== q.shadow) { sun.shadow.mapSize.set(q.shadow, q.shadow); sun.shadow.map?.dispose(); sun.shadow.map = null; }
   Object.assign(sun.shadow.camera, { left: -q.ext, right: q.ext, top: q.ext, bottom: -q.ext }); sun.shadow.camera.updateProjectionMatrix();
   bloom.enabled = q.bloom; smaa.enabled = q.smaa; shaftsAllowed = q.bloom;
+  setCloudMode(q.clouds > 0); volClouds.uniforms.steps.value = q.clouds || 18;
   sunFar.castShadow = q.far > 0; if (q.far && sunFar.shadow.mapSize.x !== q.far) { sunFar.shadow.mapSize.set(q.far, q.far); sunFar.shadow.map?.dispose(); sunFar.shadow.map = null; } sunFar.shadow.needsUpdate = true;
   if (aoPass) {
     aoPass.enabled = q.ao > 0; renderPass.enabled = !aoPass.enabled;
@@ -4954,8 +5143,8 @@ function updateInfantryHUD(dt) {
 // =====================================================================
 const ENV = {
   // Italian Apennines, high summer afternoon: wheat, limestone, warm dusty light
-  ww2: { grass: 0x6a7a2c, lush: 0x4c6a24, dry: 0xb89c48, dirt: 0x8a6a44, rock: 0x9e9484, road: 0xa38c68, far: 0x7a7468, snow: 0,
-    sun: 0xffe0b0, sunI: 5.2, hemi: [0x9fb4cc, 0x5a4a32, 0.9], sky: [5.5, 2.2, 0.005], fog: 0xc8b898, fogD: 0.00105, exp: 0.74, cover: 0.05, cloud: [[2.4, 1.6, 1.0], [0.5, 0.45, 0.45]],
+  ww2: { grass: 0x6a7a2c, lush: 0x4c6a24, dry: 0xb89c48, dirt: 0x8a6a44, rock: 0x8c8880, road: 0xa38c68, far: 0x6c7064, snow: 0,
+    sun: 0xffe2b8, sunI: 5.4, hemi: [0x9fb8d8, 0x5a4a32, 0.95], sky: [2.6, 1.7, 0.0035], fog: 0xaab6c2, fogD: 0.00088, exp: 0.74, cover: 0.05, cloud: [[2.4, 1.6, 1.0], [0.5, 0.45, 0.45]],
     pine: [0.9, 0.95, 0.8], leaf: [1.05, 1.0, 0.7], grassC: 0xc8c27a, flowers: 1, ng: [0.95, 0.9, 0.55], water: 0x2f6a6a, weather: null },
   // Korean winter: snow on the flats, frozen lake, cold flat overcast
   korea: { grass: 0x8a7d58, lush: 0x6f6648, dry: 0x9c8e66, dirt: 0x5e4e3c, rock: 0x6c6a68, road: 0x6b5a48, far: 0x9ea2a8, snow: 0.82,
@@ -4963,17 +5152,18 @@ const ENV = {
     pine: [0.75, 0.82, 0.86], leaf: [0.55, 0.45, 0.38], grassC: 0xd8cfae, flowers: 0, noGrass: true, ng: [1.3, 1.2, 0.85], ngAmt: 0, water: 0xc4d4dc, ice: true, weather: 'snow' },
   // Central Highlands monsoon: deep greens, red laterite earth, heavy humid haze and rain
   vietnam: { grass: 0x3b7a1e, lush: 0x2a6418, dry: 0x6a8a2a, dirt: 0x8e4a2a, rock: 0x6e6a5c, road: 0x9c5a36, far: 0x5a6a54, snow: 0,
-    sun: 0xfff0d0, sunI: 3.4, hemi: [0xa8bcae, 0x3a4a2a, 1.1], sky: [9, 1.4, 0.009], fog: 0xa6b4a0, fogD: 0.0017, exp: 0.7, cover: 0.7, cloud: [[1.6, 1.62, 1.55], [0.42, 0.45, 0.42]],
+    sun: 0xfff0d0, sunI: 3.4, hemi: [0xa8bcae, 0x3a4a2a, 1.1], sky: [6, 1.6, 0.007], fog: 0xa2b2a8, fogD: 0.0015, exp: 0.7, cover: 0.7, cloud: [[1.6, 1.62, 1.55], [0.42, 0.45, 0.42]],
     pine: [0.75, 1.0, 0.7], leaf: [0.85, 1.2, 0.7], grassC: 0x9ed06a, flowers: 0.5, ng: [0.75, 1.1, 0.65], water: 0x4a5a3a, weather: 'rain' },
   // Fulda Gap, autumn morning: ploughed fields, turning leaves, low mist
   coldwar: { grass: 0x5e6a2e, lush: 0x4c5e26, dry: 0x9a7432, dirt: 0x5c4632, rock: 0x7a7670, road: 0x7a6a58, far: 0x8a8a86, snow: 0,
-    sun: 0xffe6c8, sunI: 3.4, hemi: [0xb0bcc8, 0x4a4030, 1.0], sky: [7, 1.6, 0.007], fog: 0xb6b4ac, fogD: 0.0019, exp: 0.72, cover: 0.55, cloud: [[1.8, 1.55, 1.3], [0.5, 0.48, 0.5]],
+    sun: 0xffe6c8, sunI: 3.4, hemi: [0xb0bcc8, 0x4a4030, 1.0], sky: [4.2, 1.7, 0.005], fog: 0xb0b8bc, fogD: 0.0015, exp: 0.72, cover: 0.55, cloud: [[1.8, 1.55, 1.3], [0.5, 0.48, 0.5]],
     pine: [0.85, 0.95, 0.85], leaf: [1.7, 0.95, 0.4], grassC: 0xb8b070, flowers: 0.2, ng: [1.05, 0.95, 0.6], water: 0x3a5a5e, weather: null },
   // the original golden hour
-  modern: { grass: 0x4f7220, lush: 0x356a1a, dry: 0x9a8c38, dirt: 0x6a5238, rock: 0x77706a, road: 0x8a7154, far: 0x6e6a64, snow: 0,
-    sun: 0xffdcae, sunI: 4.8, hemi: [0x8fa6c4, 0x4a3b2a, 0.9], sky: [4.2, 2.7, 0.004], fog: 0xb7b4a8, fogD: 0.0011, exp: 0.72, cover: 0, cloud: [[2.4, 1.35, 0.8], [0.42, 0.36, 0.42]],
+  modern: { grass: 0x4f7220, lush: 0x356a1a, dry: 0x9a8c38, dirt: 0x6a5238, rock: 0x7c7a76, road: 0x8a7154, far: 0x667064, snow: 0,
+    sun: 0xffdfb4, sunI: 5.0, hemi: [0x96b0d4, 0x4a3b2a, 0.95], sky: [2.3, 1.9, 0.0032], fog: 0xa8b6c4, fogD: 0.0009, exp: 0.72, cover: 0, cloud: [[2.4, 1.35, 0.8], [0.42, 0.36, 0.42]],
     pine: [1, 1, 1], leaf: [1, 1, 1], grassC: 0xb5d07a, flowers: 1, ng: [1, 1, 1], water: 0x1f6a72, weather: null },
 };
+Object.assign(ENV.ww2, { forest: 0x3c4a26, snowline: 205, vcover: 0.5 }); Object.assign(ENV.korea, { vcover: 0.9 }); Object.assign(ENV.vietnam, { vcover: 0.72 }); Object.assign(ENV.coldwar, { vcover: 0.6 }); Object.assign(ENV.modern, { vcover: 0.45 });
 Object.assign(ENV.ww2, { forest: 0x3c4a26, snowline: 205 }); Object.assign(ENV.korea, { forest: 0x3a4232, snowline: 120 });
 Object.assign(ENV.vietnam, { forest: 0x1f4a18 }); Object.assign(ENV.coldwar, { forest: 0x37442a, snowline: 190 }); Object.assign(ENV.modern, { forest: 0x33472a, snowline: 195 });
 function paintTerrain(P) {
@@ -4985,7 +5175,7 @@ function paintTerrain(P) {
     c.copy(cg).lerp(cl, F[o]).lerp(cd, F[o + 1]).lerp(cdi, F[o + 2]).lerp(cr, F[o + 3]).lerp(cf, F[o + 4]);
     // mountain flanks carry dark forest below the treeline; high peaks hold snow
     const mt = F[o + 4] / 0.35, ht = HEIGHTS[k];
-    c.lerp(forest, mt * (1 - smoothstep(0.22, 0.42, F[o + 10])) * (1 - smoothstep(snowline - 40, snowline, ht)) * (0.45 + 0.4 * F[o]));
+    c.lerp(forest, mt * (1 - smoothstep(0.3, 0.55, F[o + 10])) * (1 - smoothstep(snowline - 40, snowline, ht)) * (0.6 + 0.35 * F[o]));
     c.lerp(snow, smoothstep(snowline, snowline + 30, ht) * (1 - smoothstep(0.4, 0.7, F[o + 10])) * 0.92);
     if (P.snow) c.lerp(snow, P.snow * (1 - smoothstep(0.18, 0.4, F[o + 10])) * (0.8 + 0.2 * F[o])); // snow settles on everything but steep rock
     c.lerp(cro, F[o + 5] * (P.snow ? 0.7 : 1)).lerp(crut, F[o + 6]).lerp(cdi, F[o + 7] * (P.snow ? 0.4 : 1)).lerp(cs, F[o + 8]);
@@ -5031,7 +5221,8 @@ function applyEraEnv() {
   scene.fog.color.set(P.fog); scene.fog.density = P.fogD;
   for (const pool of [smokePool, firePool, sparkPool]) pool.mesh.material.uniforms.fogDensity.value = P.fogD;
   renderer.toneMappingExposure = P.exp;
-  const cu = clouds.material.uniforms; cu.cover.value = P.cover; cu.lit.value.setRGB(...P.cloud[0]); cu.shade.value.setRGB(...P.cloud[1]);
+  const cu = flatCloudMat.uniforms; cu.cover.value = P.cover; cu.lit.value.setRGB(...P.cloud[0]); cu.shade.value.setRGB(...P.cloud[1]);
+  const vu = volClouds.uniforms; vu.lit.value.setRGB(...P.cloud[0]); vu.shade.value.setRGB(...P.cloud[1]); vu.haze.value.set(P.fog); cloudU.cloudCover.value = P.vcover;
   FOLIAGE.pine.color.setRGB(...P.pine); FOLIAGE.leaf.color.setRGB(...P.leaf); FOLIAGE.bush.color.setRGB(...P.leaf);
   grassMesh.material.color.set(P.grassC); grassMesh.visible = !P.noGrass; flowerMesh.visible = P.flowers > 0;
   nearGrass.mesh.material.color.setRGB(...P.ng); nearGrass.amt = P.ngAmt ?? 1;
@@ -5116,7 +5307,7 @@ function frame() {
   const simDt = game.mode === 'paused' ? 0 : dt;
   game.time += simDt;
   windUniform.value += simDt;
-  clouds.material.uniforms.time.value += simDt;
+  flatCloudMat.uniforms.time.value += simDt; cloudU.cloudTime.value += simDt;
   grade.uniforms.time.value = performance.now() / 1000;
 
   if (simDt > 0) simStep(simDt);
