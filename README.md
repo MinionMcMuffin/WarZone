@@ -41,21 +41,25 @@ Each era is self-contained and has its own battlefield: sunny Italian summer for
 
 | Control | Action |
 | --- | --- |
-| W A S D | Move (Shift sprint, C crouch, Space jump) |
+| W A S D | Move (Shift sprint, C crouch, Z prone, Space jump) |
 | Mouse | Look and aim |
 | Left click | Fire |
 | Right click | Aim down sights (red dot or iron sights); with the Javelin, hold near a tank to lock on; with the Dragon, keep the sight on the tank until impact |
 | 1 / 2 or Q | Rifle or anti-tank launcher |
 | R | Reload |
+| G | Throw a grenade |
 
 Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons.
 
 ## What's in it
 
 - Procedural 2 km valley with a lake, road, ruined village, forests, dense wind-blown 3D grass, wildflowers and burning wrecks
-- Golden-hour sky, image-based lighting, soft shadows, ambient occlusion, light shafts, lens flare, bloom and per-era colour grading
+- Golden-hour sky, image-based lighting, soft shadows with a far cascade out to the horizon, ambient occlusion, light shafts, lens flare, bloom and per-era colour grading
 - Eighteen procedurally modelled tanks with animated tracks, crews, period insignia and paint
 - Ballistic gunnery, ricochets, armour zones, tank cook-offs, splash damage and tracers
+- Battle sizes from Standard to Massive: up to 26 enemy tanks at once, 8 allied tanks and well over a hundred soldiers
+- Infantry on both sides that take cover, bound forward in pairs, go prone under fire, reload, throw grenades and get thrown by blasts; incoming rounds crack past and pin you down
+- Allied air strikes and artillery barrages on enemy positions, with smoke from burning towns on the horizon
 - Infantry squads with riflemen and anti-tank gunners, an allied fireteam, and tanks that hunt infantry with their machine guns
 - A Javelin that locks on and flies a top-attack profile, a wire-guided Dragon, and unguided LAW and Bazookas
 - Tanks can't enter the lake; infantry can wade the shallows
