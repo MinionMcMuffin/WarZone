@@ -57,7 +57,7 @@ Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons
 - Golden-hour sky, image-based lighting, soft shadows with a far cascade out to the horizon, ambient occlusion, light shafts, lens flare, bloom and per-era colour grading
 - Eighteen procedurally modelled tanks with animated tracks, crews, period insignia and paint
 - Ballistic gunnery, ricochets, armour zones, tank cook-offs, splash damage and tracers
-- Battle sizes from Standard to Massive: up to 26 enemy tanks at once, 8 allied tanks and well over a hundred soldiers
+- Battle sizes from Standard to Epic: up to 50 enemy tanks and 100 enemy infantry at once, 8 allied tanks and well over a hundred soldiers
 - Infantry on both sides that take cover, bound forward in pairs, go prone under fire, reload, throw grenades and get thrown by blasts; incoming rounds crack past and pin you down
 - Allied air strikes and artillery barrages on enemy positions, with smoke from burning towns on the horizon
 - Infantry squads with riflemen and anti-tank gunners, an allied fireteam, and tanks that hunt infantry with their machine guns

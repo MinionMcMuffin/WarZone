@@ -294,7 +294,7 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
     </div>
     <div class="pick" role="group" aria-label="Battle size">
       <div class="label">Battle size</div>
-      <div class="seg battlesel"><button data-battle="standard" aria-pressed="false">Standard</button><button data-battle="large" aria-pressed="true">Large</button><button data-battle="massive" aria-pressed="false">Massive</button></div>
+      <div class="seg battlesel"><button data-battle="standard" aria-pressed="false">Standard</button><button data-battle="large" aria-pressed="true">Large</button><button data-battle="massive" aria-pressed="false">Massive</button><button data-battle="epic" aria-pressed="false">Epic · 50 tanks</button></div>
     </div>
     <div class="keys" id="keysInf" hidden>
       <kbd>W A S D</kbd><span>Move · Shift to sprint · C to crouch · Z to go prone · Space to jump</span>
@@ -3050,6 +3050,7 @@ document.querySelectorAll('.seg button[data-q]').forEach((b) => b.addEventListen
 const BATTLE = {
   standard: { alive: 9, allies: 3, size: 4, blue: 1, redCap: 32, gap: [6, 12], tanks: (w, foot) => foot ? Math.min(1 + w, 8) : Math.min(3 + w * 2, 18), squads: (w, foot) => foot ? Math.min(2 + Math.floor(w / 2), 5) : Math.min(1 + Math.floor(w / 2), 4) },
   large: { alive: 16, allies: 5, size: 6, blue: 3, redCap: 64, gap: [3, 7], tanks: (w, foot) => foot ? Math.min(2 + w * 2, 14) : Math.min(5 + w * 3, 30), squads: (w) => Math.min(3 + w, 9) },
+  epic: { alive: 50, allies: 8, size: 10, blue: 6, redCap: 110, gap: [0.6, 1.5], tanks: () => 50, squads: () => 10 },
   massive: { alive: 26, allies: 8, size: 8, blue: 5, redCap: 110, gap: [2, 4.5], tanks: (w, foot) => foot ? Math.min(4 + w * 3, 22) : Math.min(9 + w * 4, 48), squads: (w) => Math.min(5 + w * 2, 15) },
 };
 let battleName = 'large';
@@ -3344,7 +3345,7 @@ function nextWave() {
   const onFoot = !!player.soldier;
   const B = BATTLE[battleName];
   game.toSpawn = B.tanks(game.wave, onFoot);
-  game.squadsToSpawn = B.squads(game.wave, onFoot); game.squadT = 3;
+  game.squadsToSpawn = B.squads(game.wave, onFoot); game.squadT = battleName === 'epic' ? 0.5 : 3;
   game.spawnT = 1.5;
   const names = [...new Set(Array.from({ length: 6 }, () => KINDS[pickEnemyKind(game.wave)].name))].slice(0, 3).join(' · ');
   bigMsg(`WAVE ${game.wave}`, `${game.toSpawn} tanks and ${game.squadsToSpawn} infantry squads inbound · ${names}`, 3.4);
@@ -3359,7 +3360,7 @@ function updateWaves(dt) {
   if (game.toSpawn > 0) {
     game.spawnT -= dt;
     const alive = tanks.filter((t) => t.team === 'red' && t.alive).length;
-    if (game.spawnT <= 0 && alive < BATTLE[battleName].alive) { spawnEnemy(); game.toSpawn--; game.spawnT = battleName === 'massive' ? rr(0.8, 2) : battleName === 'large' ? rr(1.2, 3) : rr(2, 4.5); }
+    if (game.spawnT <= 0 && alive < BATTLE[battleName].alive) { spawnEnemy(); game.toSpawn--; game.spawnT = battleName === 'epic' ? rr(0.15, 0.4) : battleName === 'massive' ? rr(0.8, 2) : battleName === 'large' ? rr(1.2, 3) : rr(2, 4.5); }
   } else if (game.waveTimer <= 0 && !tanks.some((t) => t.team === 'red' && t.alive) && !redInf && !(game.squadsToSpawn > 0)) {
     game.waveTimer = 7;
     bigMsg(`WAVE ${game.wave} CLEARED`, 'Field repairs and resupply', 3);
