@@ -1778,7 +1778,7 @@ function makeWater(level, amp, maxR) {
   for (let i = 0; i < RN; i++) for (let j = 0; j < AN; j++) { const a = j / AN * 6.2832, r = rings[i]; sp.push(Math.cos(a) * r, 0, Math.sin(a) * r); }
   for (let i = 0; i < RN - 1; i++) for (let j = 0; j < AN; j++) { const a = i * AN + j, b = i * AN + (j + 1) % AN, c = a + AN, d = b + AN; si.push(a, b, c, b, d, c); } // wound to face up
   const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); sg.setAttribute('normal', new THREE.Float32BufferAttribute(sp.map((_, k) => (k % 3 === 1 ? 1 : 0)), 3)); sg.setIndex(si);
-  const seaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.09, metalness: 0.0, envMapIntensity: maxR ? 0.75 : 1.05 });
+  const seaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.09, metalness: 0.0, envMapIntensity: maxR ? 0.55 : 1.05 });
   const waveGLSL = SEA_WAVES.map(([dx, dz, L, A, Q, ph]) => { const n = Math.hypot(dx, dz), k = 2 * Math.PI / L, w = Math.sqrt(9.8 * k);
     return `{ vec2 d = vec2(${(dx / n).toFixed(4)}, ${(dz / n).toFixed(4)}); float th = ${k.toFixed(5)} * dot(d, wp0.xz) - ${w.toFixed(5)} * uTime + ${ph.toFixed(3)};
       float A = ${A.toFixed(3)} * att, q = ${(Q / (k * A * SEA_WAVES.length)).toFixed(4)}, c = cos(th), s = sin(th);
@@ -1802,7 +1802,7 @@ function makeWater(level, amp, maxR) {
     sh.fragmentShader = 'uniform float uTime; uniform sampler2D uRip, uFoam; varying float vDepth, vCrest; varying vec3 vSeaW, vSeaN;\n#define CLOUD_SHADOWS\n' + CLOUD_GLSL + sh.fragmentShader
       .replace('#include <color_fragment>', `
         float shallow = smoothstep(7.0, 0.4, vDepth);
-        vec3 deepC = vec3(0.045, 0.13, 0.16), shalC = vec3(0.16, 0.36, 0.34), sandC = vec3(0.55, 0.5, 0.38);
+        vec3 deepC = ${maxR ? 'vec3(0.025, 0.07, 0.065)' : 'vec3(0.045, 0.13, 0.16)'}, shalC = ${maxR ? 'vec3(0.09, 0.17, 0.13)' : 'vec3(0.16, 0.36, 0.34)'}, sandC = vec3(0.55, 0.5, 0.38);
         diffuseColor.rgb = mix(deepC, shalC, shallow);
         diffuseColor.rgb = mix(diffuseColor.rgb, sandC, smoothstep(0.7, 0.05, vDepth) * 0.55);
         // surf: churned white water where the swell meets the sand, whitecaps on the steepest crests
@@ -2248,6 +2248,7 @@ const particles = {
       const a = i / (22 * k) * 6.28, sp = rr(9, 15) * k;
       smokePool.emit({ x: p.x, y: terrainHeight(p.x, p.z) + 0.6, z: p.z, vx: Math.cos(a) * sp, vy: 0.3, vz: Math.sin(a) * sp, life: rr(1.2, 2.2), s0: 1.5, s1: rr(4, 6) * k, c0: [0.55, 0.47, 0.37, 0.4], c1: [0.6, 0.52, 0.42, 0], drag: 2.6 });
     }
+    if (dirt && k >= 0.7) debris.burst(p, Math.round(5 * k), true); // clods of earth
     if (dirt) for (let i = 0; i < 22 * k; i++) {
       const a = rr(0, 6.28), sp = rr(2, 7);
       smokePool.emit({ x: p.x, y: p.y + 0.3, z: p.z, vx: Math.cos(a) * sp, vy: rr(8, 17), vz: Math.sin(a) * sp, life: rr(0.9, 1.6), s0: rr(0.4, 0.8), s1: rr(0.9, 1.6), c0: [0.16, 0.12, 0.08, 1], c1: [0.2, 0.15, 0.1, 0], grav: 18, drag: 0.4 });
@@ -2878,7 +2879,7 @@ const SCHEMES = {
   challenger: { camo: camoTexture([0x5a5f42, 0x4a4f36, 0x3c4030, 0x6a6e4e], 606) },
   t80: { camo: camoTexture([0x5e6650, 0x4a5240, 0x353a2e, 0x707862], 707) },
   t90: { camo: camoTexture([0x68723f, 0x4c5530, 0x8a7a50, 0x3a3e2a], 808) },
-  od: { camo: camoTexture([0x4f5530, 0x4a502c, 0x454a2a, 0x575d36], 901) },
+  od: { camo: camoTexture([0x5e5a32, 0x57552f, 0x504e2b, 0x66623a], 901) },
   scc: { camo: camoTexture([0x4c5233, 0x464b2f, 0x3e432a, 0x565b3b], 902) },
   dunkelgelb: { camo: camoTexture([0xb59e64, 0x5a6a3a, 0x6e4c33, 0xc4ad73], 903) },
   usv: { camo: camoTexture([0x535a32, 0x4e552f, 0x48502b, 0x5c6338], 904) },
@@ -2937,6 +2938,61 @@ const KINDS = {
   panther: { era: 'ww2', design: 'panther', scheme: 'dunkelgelb', team: 'red', cls: 'mbt', hp: 130, maxF: 11, reload: 4.4, scale: 1, dmg: 1.2, pts: 1.4, name: 'Panther Ausf. G', mark: 'cross' },
   tiger: { era: 'ww2', design: 'tiger', scheme: 'dunkelgelb', team: 'red', cls: 'heavy', hp: 190, maxF: 7, reload: 5.4, scale: 1.05, dmg: 1.5, pts: 1.8, name: 'Tiger I', mark: 'cross' },
 };
+// Armour [front, side, rear] and gun penetration, in millimetres of rolled steel (front values already allow for slope;
+// composite figures are rough kinetic-energy equivalents)
+const ARMOUR = {
+  sherman: [90, 38, 38, 116], cromwell: [76, 32, 32, 68], churchill: [152, 95, 50, 68], pz4: [80, 30, 20, 106], panther: [140, 50, 40, 150], tiger: [110, 80, 80, 132],
+  pershing: [150, 76, 51, 147], m46: [150, 76, 51, 160], chaffee: [50, 25, 19, 68], t3485: [90, 45, 45, 100],
+  m48: [200, 76, 30, 320], centurion: [200, 51, 38, 300], sheridan: [40, 25, 20, 430], m113: [38, 38, 38, 20], t54: [200, 80, 45, 380], t55: [210, 80, 45, 380], pt76: [20, 15, 10, 75],
+  m1ip: [420, 60, 40, 400], leo2a4: [430, 70, 30, 500], m60: [250, 76, 40, 400], bradleyA0: [30, 25, 25, 60], marder: [50, 30, 25, 45], t72a: [410, 80, 40, 420], t64b: [400, 80, 40, 420], t80b: [450, 80, 40, 450], bmp1: [33, 18, 16, 300], bmp2cw: [33, 18, 16, 60],
+  abrams: [700, 80, 40, 650], leopard: [700, 80, 40, 700], challenger: [750, 80, 40, 650], bradley: [60, 35, 25, 70], warrior: [45, 30, 25, 75], sprut: [40, 20, 15, 600], t72: [550, 80, 40, 600], t80: [600, 80, 40, 600], t90: [650, 90, 45, 650], t14: [900, 120, 60, 750], bmp2: [33, 18, 16, 60], bmp3: [50, 30, 20, 70],
+};
+for (const k in KINDS) { const a = ARMOUR[k] || [100, 40, 30, 150]; KINDS[k].arm = a.slice(0, 3); KINDS[k].pen = a[3]; }
+// where a hit lands and whether it gets through: penetration falls off with range, armour grows with impact angle
+function armourCheck(tk, hit, pen, dist, top) {
+  const lp = hit.localP, A = tk.K.arm;
+  let zone = 'front', arm = A[0];
+  if (top) { zone = 'roof'; arm = 40; }
+  else if (lp.z < HB.z0 + 1.2) { zone = 'rear'; arm = A[2]; }
+  else if (Math.abs(lp.x) > HB.x - 0.2 && lp.z < 2.5) { zone = 'side'; arm = A[1]; }
+  if (lp.y > 1.45 && !top) zone += ' turret';
+  const cosA = Math.max(0.35, Math.abs(hit.localDir.dot(hit.localN)));
+  const eff = arm / Math.pow(cosA, 0.7), p = pen * clamp(1.08 - dist / 6000, 0.78, 1.08), ratio = p / eff;
+  return { zone, ratio, through: ratio >= 1 || (ratio > 0.75 && Math.random() < (ratio - 0.75) / 0.25) };
+}
+// component damage: thrown tracks, engine fires, jammed turret rings and wounded crew, each repaired in the field
+function moduleHit(tk, lp, zone, through) {
+  const M = tk.mods || (tk.mods = { track: 0, fire: 0, turret: 0, crew: 0 }), out = [];
+  if (Math.abs(lp.x) > HB.x - 0.5 && lp.y < 1.0 && Math.random() < (through ? 0.55 : 0.3)) { M.track = rr(10, 16); out.push('track thrown'); }
+  if (through && zone.startsWith('rear') && Math.random() < 0.45) { M.fire = rr(6, 9); out.push('engine fire'); }
+  if (through && zone.includes('turret') && Math.random() < 0.3) { M.turret = rr(12, 18); out.push('turret ring jammed'); }
+  if (through && Math.random() < 0.22) { M.crew = rr(15, 25); out.push('crewman wounded'); }
+  return out;
+}
+let spotT = 0;
+function spotFromPlayer(dt) {
+  if ((spotT -= dt) > 0) return; spotT = 0.4;
+  const pe = playerEnt(); if (!pe?.alive) return;
+  const eye = _v3.set(pe.pos.x, pe.pos.y + (pe.isSoldier ? pe.height() : 2.8 * pe.size), pe.pos.z), c = new THREE.Vector3();
+  for (const list of [tanks, soldiers]) for (const e of list) {
+    if (!e.alive || e.team !== 'red' || e.pos.distanceTo(pe.pos) > (e.isSoldier ? 300 : 650)) continue;
+    if (e.isSoldier) e.center(c); else c.set(e.pos.x, e.pos.y + 1.6 * e.size, e.pos.z);
+    if (hasLOS(eye, c)) e.spottedT = game.time;
+  }
+}
+function updateModules(t, dt) {
+  const M = t.mods; if (!M) return;
+  const say = (m) => { if (t.isPlayer) feed(m, false); };
+  if (M.track > 0 && (M.track -= dt) <= 0) say('Track repaired · mobile again');
+  if (M.turret > 0 && (M.turret -= dt) <= 0) say('Turret ring freed');
+  if (M.crew > 0 && (M.crew -= dt) <= 0) say('Crew back at full strength');
+  if (M.fire > 0) {
+    M.fire -= dt; t.hp -= 2.2 * dt * (t.team === 'blue' ? 0.6 : 1);
+    const b = t.forward(_v1); if (Math.random() < dt * 30) particles.fire(_v2.set(t.pos.x - b.x * 3, t.pos.y + 1.6, t.pos.z - b.z * 3), 0.8);
+    if (t.hp <= 0) { t.hp = 0; t.destroy(); return; }
+    if (M.fire <= 0) say('Engine fire out');
+  }
+}
 const ERAS = {
   ww2: { label: 'WW2 · 1944', where: 'Gothic Line · Italian Apennines · 1944', blue: ['sherman', 'cromwell', 'churchill'], wreck: 'pz4', shell: 240,
     pool: (w) => [['pz4', 6], ...(w >= 2 ? [['panther', 2 + w * 0.4]] : []), ...(w >= 3 ? [['tiger', 0.6 + w * 0.3]] : [])],
@@ -2988,10 +3044,16 @@ const armourNormal = (() => {
   return heightToNormalTex(h, N, 2.5);
 })();
 function addDust(sh) {
-  sh.vertexShader = 'varying float vUpN;\n' + sh.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvUpN = normalize(mat3(modelMatrix) * objectNormal).y;');
-  sh.fragmentShader = 'varying float vUpN;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+  sh.vertexShader = 'varying float vUpN; varying vec3 vObjP;\n' + sh.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvUpN = normalize(mat3(modelMatrix) * objectNormal).y; vObjP = position;');
+  sh.fragmentShader = 'varying float vUpN; varying vec3 vObjP;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
     float dust = smoothstep(0.5, 0.95, vUpN) * (0.3 + 0.7 * texture2D(map, vMapUv * 2.7 + 0.3).r);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.53, 0.42), dust * 0.38);`);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.53, 0.42), dust * 0.38);
+    // weathering: rain and oil streaks running down the vertical plates, rust blooms in the grime
+    float side = 1.0 - smoothstep(0.35, 0.7, abs(vUpN));
+    float streak = texture2D(map, vec2((vObjP.x + vObjP.z) * 1.7, vObjP.y * 0.09)).g;
+    diffuseColor.rgb *= 1.0 - side * smoothstep(0.45, 0.85, streak) * 0.22;
+    float rust = smoothstep(0.62, 0.8, texture2D(map, vObjP.xz * 0.9 + vObjP.y * 0.4).b) * side;
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.32, 0.18, 0.1), rust * 0.35);`);
 }
 for (const k in SCHEMES) {
   SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.66, metalness: 0.1, normalMap: armourNormal, normalScale: new THREE.Vector2(0.55, 0.55) });
@@ -3133,10 +3195,11 @@ class Tank {
       this.floating = !!this.dd && depthHere > 1.15;
       let target = (throttle > 0 ? throttle * this.maxF : throttle * this.maxR) * (this.floating ? 0.3 : this.pos.y < waterAt(this.pos.x, this.pos.z) + 0.2 ? 0.5 : 1);
       if (this.floating) target = clamp(target, -1.2, 3.8); // twin propellers: about four knots
+      if (this.mods?.track > 0) target = 0; // thrown track: going nowhere until the crew refits it
       target *= 1 - clamp(this.slope * 1.4, -0.25, 0.65) * Math.sign(target || 1);
       const braking = Math.sign(target) !== Math.sign(this.speed) && Math.abs(this.speed) > 0.2;
       this.speed = approach(this.speed, target, (braking ? 12 : throttle ? 5 : 3.5) * dt);
-      const turnTarget = steer * (0.85 - 0.35 * Math.abs(this.speed) / this.maxF);
+      const turnTarget = this.mods?.track > 0 ? 0 : steer * (0.85 - 0.35 * Math.abs(this.speed) / this.maxF);
       this.turn = approach(this.turn, turnTarget, 3 * dt);
       this.heading += this.turn * dt;
       const fw = this.forward();
@@ -3156,6 +3219,7 @@ class Tank {
     }
     this.alignToGround(dt);
     if (this.screen) updateDD(this, dt);
+    if (this.alive && this.mods) updateModules(this, dt);
     v.root.position.copy(this.pos);
     _q1.setFromEuler(new THREE.Euler(this.pitchOff, 0, this.rollOff));
     v.root.quaternion.copy(this.quat).multiply(_q1);
@@ -3254,8 +3318,9 @@ class Tank {
   barrelDir(out) { return out.set(0, 0, 1).applyQuaternion(this.v.barrel.getWorldQuaternion(_q1)).normalize(); }
   fire() {
     if (!this.alive || this.reload > 0) return false;
+    if (this.team === 'red') this.spottedT = game.time; // the muzzle flash gives it away
     if (this.screenUp) { if (this.isPlayer && game.time - (this.screenMsgT || -9) > 3) { this.screenMsgT = game.time; feed('Flotation screen up: you can fire once you are ashore', true); } return false; }
-    this.reload = this.reloadTime;
+    this.reload = this.reloadTime * (this.mods?.crew > 0 ? 1.6 : 1); // a wounded loader is slower
     const p = this.muzzleWorld(new THREE.Vector3()), d = this.barrelDir(new THREE.Vector3());
     if (!this.isPlayer) { const sp = this.spread * (1 + Math.abs(this.speed) * 0.18); d.x += rr(-1, 1) * sp; d.y += rr(-0.5, 1) * sp; d.z += rr(-1, 1) * sp; d.normalize(); }
     if (this.K.ac) { // autocannon: light HE rounds in bursts
@@ -3504,20 +3569,25 @@ function impact(s, hit) {
       if (ac && tk.team === 'blue') dmg = rr(13, 19) * (s.owner?.K?.dmg ?? 0.25);
       if (tk.K.cls === 'ifv' && !ac) dmg *= 1.4; // thin armour: tank rounds go straight through
       const lp = hit.localP;
-      let zone = 'front';
-      if (lp.z < HB.z0 + 1.2) { dmg *= 1.7; zone = 'rear'; } else if (Math.abs(lp.x) > HB.x - 0.2 && lp.z < 2.5) { dmg *= 1.3; zone = 'side'; }
-      if (lp.y > 1.45) zone += ' turret';
+      const pen = (s.owner?.K?.pen ?? 150) * (mine ? 1.15 : 1), dist = s.owner?.pos ? s.owner.pos.distanceTo(p) : 500;
+      const ar = armourCheck(tk, hit, pen, dist, false), zone = ar.zone;
+      let weak = false;
+      if (!ar.through && Math.random() < (mine ? 0.3 : 0.18)) weak = true; // a lucky hit on a vision port, mantlet gap or the lower plate
+      if (zone.startsWith('rear')) dmg *= 1.5; else if (zone.startsWith('side')) dmg *= 1.25;
+      if (ar.through) dmg *= clamp(0.75 + 0.25 * ar.ratio, 0.85, 1.3); else if (weak) dmg *= 0.6; else dmg = rr(1, 3); // non-penetrating hits only shake the crew
+      const mods = moduleHit(tk, lp, zone, ar.through || weak);
       const wasAlive = tk.alive;
       tk.damage(dmg, s.owner, p);
       splashDamage(p, ac ? 2.5 : 5, ac ? 30 : 90, s.owner);
       if (s.owner?.isPlayer && tk.team === 'red') {
         showHitmark();
-        if (wasAlive && !tk.alive) onKill(tk); else if (!ac) feed(`Hit · ${tk.K.name} · ${zone}`, false);
+        if (wasAlive && !tk.alive) onKill(tk);
+        else if (!ac || mods.length) feed(ar.through || weak ? `${weak ? 'Weak spot' : 'Penetration'} · ${tk.K.name} · ${zone}${mods.length ? ' · ' + mods.join(', ') : ''}` : `No penetration · ${tk.K.name} ${zone}${mods.length ? ' · ' + mods.join(', ') : ' · flank it'}`, !(ar.through || weak) && !mods.length);
       } else if (wasAlive && !tk.alive) {
         if (tk.team === 'red') { game.score += 50 * game.wave; feed(`${s.owner?.K?.name || 'Allies'} destroyed a ${tk.K.name}`, false); }
         else if (!tk.isPlayer) feed(`${tk.K.name} lost`, true);
       }
-      if (tk.isPlayer) onPlayerHit(s.owner, dmg);
+      if (tk.isPlayer) { onPlayerHit(s.owner, dmg, !(ar.through || weak)); if (!(ar.through || weak)) feed(`Armour held · ${zone}`, false); if (mods.length) feed(`Damaged · ${mods.join(', ')}`, true); }
     }
   } else if (hit.type === 'ground') {
     if (mg) { smokePool.emit({ x: p.x, y: p.y + 0.2, z: p.z, vy: 2, life: 0.8, s0: 0.3, s1: 1.4, c0: [0.45, 0.38, 0.3, 0.5], c1: [0.5, 0.45, 0.35, 0] }); }
@@ -3932,8 +4002,11 @@ function drawRadar(dt) {
   rctx.stroke(); rctx.setLineDash([]);
   // village
   { const [x, y] = toR(VILLAGE.x, VILLAGE.y); rctx.strokeStyle = 'rgba(223,230,207,0.4)'; rctx.strokeRect(x - 10, y - 10, 20, 20); }
+  // fog of war: enemies show only while someone on your side can see them (or just saw their muzzle flash)
+  const seen = (e) => e.team !== 'red' || !e.alive ? 1 : clamp(1 - (game.time - (e.spottedT ?? -99) - 3) / 4, 0, 1);
   for (const t of tanks) {
     if (t.isPlayer) continue;
+    const vis = seen(t); if (vis <= 0) continue; rctx.globalAlpha = vis;
     let [x, y] = toR(t.pos.x, t.pos.z); const d = Math.hypot(x, y); if (d > R0 - 6) { x *= (R0 - 6) / d; y *= (R0 - 6) / d; }
     rctx.save(); rctx.translate(x, y); rctx.rotate(-(t.heading - view));
     rctx.fillStyle = !t.alive ? 'rgba(223,230,207,0.35)' : t.team === 'red' ? '#ea4a3a' : '#7fb8ff';
@@ -3941,9 +4014,11 @@ function drawRadar(dt) {
   }
   for (const sd of soldiers) {
     if (sd.isPlayer || !sd.alive) continue;
+    const vis = seen(sd); if (vis <= 0) continue; rctx.globalAlpha = vis;
     const [x, y] = toR(sd.pos.x, sd.pos.z); if (Math.hypot(x, y) > R0 - 4) continue;
     rctx.fillStyle = sd.team === 'red' ? '#ea4a3a' : '#7fb8ff'; rctx.beginPath(); rctx.arc(x, y, 3.2, 0, 6.28); rctx.fill();
   }
+  rctx.globalAlpha = 1;
   // player
   rctx.save(); rctx.rotate(-(pt.heading - view)); rctx.fillStyle = '#9cc56b'; rctx.fillRect(-5, -8, 10, 16); rctx.restore();
   rctx.save(); rctx.rotate(-(pt.heading + (pt.turretYaw || 0) - view)); rctx.strokeStyle = '#dfe6cf'; rctx.lineWidth = 2; rctx.beginPath(); rctx.moveTo(0, 0); rctx.lineTo(0, -22); rctx.stroke(); rctx.restore();
@@ -4134,6 +4209,7 @@ function ballisticElev(dx, dy, v) {
   return Math.atan((v2 - Math.sqrt(disc)) / (g * dx));
 }
 function aimTurret(t, target, dt, traverse = 1.05, elevRate = 0.55) {
+  if (t.mods?.turret > 0) traverse *= 0.3; // jammed ring: cranking it round by hand
   const local = _v1.copy(target).applyMatrix4(t.inv);
   const L = t.v.L, tp = _v2.set(0, L.turret[1] + L.pivot[1], L.turret[2]);
   local.sub(tp);
@@ -4224,6 +4300,7 @@ function updateAI(t, dt) {
   const mz = t.muzzleWorld(new THREE.Vector3());
   const los = fd < 340 && hasLOS(mz, _v1.copy(foe.pos).setY(foe.pos.y + 1.6 * foe.size));
   ai.los = los ? ai.los + dt : 0;
+  if (los && t.team === 'blue') foe.spottedT = game.time;
   if (foe.isSoldier) {
     // coax machine gun bursts at infantry, the main gun only now and then
     t.mgT = (t.mgT ?? 0) - dt;
@@ -4791,7 +4868,7 @@ const _towV = new THREE.Vector3();
 function fireTOW(t, aimP) {
   const from = t.v.turret.localToWorld(new THREE.Vector3(-1.3, 0.9, 0.8));
   const dir = aimP.clone().sub(from).normalize(); dir.y += 0.02; dir.normalize();
-  fireRocket(from, dir, t, { lock: false, tow: true, speed: 125, dmg: t.isPlayer ? 120 : 50 }, null);
+  fireRocket(from, dir, t, { lock: false, tow: true, speed: 125, dmg: t.isPlayer ? 120 : 50, pen: era === 'modern' ? 900 : 600 }, null);
 }
 // an IFV's rifle squad climbs out of the back ramp
 function dismountSquad(t) {
@@ -4848,13 +4925,15 @@ function rocketImpact(s, hit) {
   const tk = hit.tank;
   if (s.owner && tk.team === s.owner.team) return;
   particles.penetration(p);
-  let dmg = s.spec.dmg, how = '';
-  if (s.spec.lock && s.v.y < -s.v.length() * 0.3) { dmg *= 1.5; how = 'top attack'; }
-  else if (hit.localP.z < HB.z0 + 1.2) { dmg *= 1.6; how = 'rear'; }
-  else if (Math.abs(hit.localP.x) > HB.x - 0.2) { dmg *= 1.25; how = 'side'; }
+  const top = !!s.spec.lock && s.v.y < -s.v.length() * 0.3;
+  const ar = armourCheck(tk, hit, s.spec.pen ?? 300, 0, top), how = ar.zone;
+  let dmg = s.spec.dmg;
+  if (top) dmg *= 1.5; else if (how.startsWith('rear')) dmg *= 1.6; else if (how.startsWith('side')) dmg *= 1.25;
+  if (!ar.through) dmg *= 0.12; // a shaped charge that fails to burn through
+  const mods = moduleHit(tk, hit.localP, how, ar.through);
   const wasAlive = tk.alive;
   tk.damage(dmg, s.owner, p);
-  if (s.owner?.isPlayer) { showHitmark(); if (wasAlive && !tk.alive) onKill(tk); else feed(`Hit · ${tk.K.name}${how ? ' · ' + how : ''}`, false); }
+  if (s.owner?.isPlayer) { showHitmark(); if (wasAlive && !tk.alive) onKill(tk); else feed(`${ar.through ? 'Penetration' : 'No penetration'} · ${tk.K.name} · ${how}${mods.length ? ' · ' + mods.join(', ') : ''}`, !ar.through); }
   else if (wasAlive && !tk.alive) feed(tk.team === 'red' ? `${tk.K.name} destroyed by infantry` : `${tk.K.name} lost to an ${ERA_INF[era].redAT}`, tk.team !== 'red');
   if (tk.isPlayer) onPlayerHit(s.owner, dmg);
 }
@@ -4916,7 +4995,7 @@ function updateSoldierAI(s, dt) {
   const eye = _se.set(s.pos.x, s.pos.y + s.height() - 0.15, s.pos.z);
   if (foe) {
     fd = Math.hypot(foe.pos.x - s.pos.x, foe.pos.z - s.pos.z);
-    if (ai.losT <= 0) { ai.losT = rr(0.4, 0.7); const c = foe.isSoldier ? foe.center(_sf) : _sf.set(foe.pos.x, foe.pos.y + 1.4 * foe.size, foe.pos.z); ai.los = fd < (s.role === 'at' ? 190 : s.mg42 ? 280 : 170) && hasLOS(eye, c); }
+    if (ai.losT <= 0) { ai.losT = rr(0.4, 0.7); const c = foe.isSoldier ? foe.center(_sf) : _sf.set(foe.pos.x, foe.pos.y + 1.4 * foe.size, foe.pos.z); ai.los = fd < (s.role === 'at' ? 190 : s.mg42 ? 280 : 170) && hasLOS(eye, c); if (ai.los && s.team === 'blue') foe.spottedT = game.time; }
   } else ai.los = false;
   const engage = foe && ai.los;
   if (engage) ai.contact = game.time;
@@ -4978,7 +5057,7 @@ function updateSoldierAI(s, dt) {
       const lead2 = fd / 110, fw = foe.forward(new THREE.Vector3());
       const aimP = c.clone().addScaledVector(fw, foe.speed * lead2 * 0.7);
       const dir = aimP.sub(from).normalize(); dir.y += fd * 0.00012; dir.x += rr(-0.02, 0.02); dir.z += rr(-0.02, 0.02); dir.normalize();
-      fireRocket(from, dir, s, { lock: false, speed: 115, dmg: 22 }, null); s.kick = 2;
+      fireRocket(from, dir, s, { lock: false, speed: 115, dmg: 22, pen: { ww2: 210, dday: 210, korea: 280 }[era] ?? 300 }, null); s.kick = 2;
     }
     return;
   }
@@ -4991,6 +5070,7 @@ function updateSoldierAI(s, dt) {
   const spread = (red ? Math.max(0.018, 0.045 - game.wave * 0.003) * EASE.enemySpread : 0.03) * (foe.isPlayer ? 1 : 0.8) * (1 + s.supp * 1.2) * (s.prone > 0.5 ? 0.7 : 1);
   const dir = c.clone().sub(from).normalize(); dir.x += rr(-spread, spread); dir.y += rr(-spread, spread) * 0.6; dir.z += rr(-spread, spread); dir.normalize();
   fireBullet(from, dir, s, red ? (auto ? 11 : 26) : 24, Math.random() < 0.35);
+  if (red) s.spottedT = game.time;
   firePool.emit({ x: from.x, y: from.y, z: from.z, life: 0.05, s0: 0.35, s1: 0.5, c0: [16, 9, 3, 1], c1: [4, 1, 0.2, 0] });
   if (Math.random() < 0.3) smokePool.emit({ x: from.x, y: from.y, z: from.z, vy: 0.4, life: 0.8, s0: 0.15, s1: 0.6, c0: [0.8, 0.78, 0.74, 0.25], c1: [0.85, 0.83, 0.8, 0] });
   s.kick = 1;
@@ -5644,7 +5724,7 @@ function updateHUD(dt) {
   hpCells.forEach((c, i) => c.classList.toggle('off', i >= cells));
   hpBar.classList.toggle('warn', hp <= 0.5 && hp > 0.25); hpBar.classList.toggle('crit', hp <= 0.25);
   $('vHp').textContent = Math.ceil(hp * 100) + '%';
-  $('vTank').textContent = t.K.name + ' · hull';
+  { const M = t.mods || {}, st = [M.track > 0 && `TRACK ${Math.ceil(M.track)}s`, M.fire > 0 && 'FIRE', M.turret > 0 && 'TURRET', M.crew > 0 && 'CREW'].filter(Boolean); $('vTank').textContent = t.K.name + (st.length ? ' · ' + st.join(' · ') : ' · hull'); }
   $('vSpeed').textContent = Math.round(Math.abs(t.speed) * 3.6);
   $('vGear').textContent = t.speed > 0.3 ? 'F' : t.speed < -0.3 ? 'R' : 'N';
   $('vHdg').textContent = String(Math.round(((-cam.yaw * 180 / Math.PI) % 360 + 360) % 360) % 360).padStart(3, '0');
@@ -5955,6 +6035,7 @@ function simStep(simDt) {
     for (const t of tanks) { if (!t.isPlayer && t.alive && t.ai && game.mode !== 'title') updateAI(t, simDt); t.update(simDt); }
     updateSoldiers(simDt);
     updateCity(simDt);
+    if (game.mode === 'play') spotFromPlayer(simDt);
     updateBeach(simDt);
     updateBoats(simDt);
     updateSmoke(simDt);

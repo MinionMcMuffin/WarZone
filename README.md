@@ -26,7 +26,7 @@ Each era is self-contained and has its own map. Switching era rebuilds the world
 | Cold War · 1985 | Rolling Fulda Gap farmland and a German town | M1 Abrams, Leopard 2A4, M60A3 Patton, M2 Bradley (+ Marder 1A3 allies) | T-72A, T-64B, T-80B, BMP-1, BMP-2 | M16A2, M47 Dragon (wire-guided) | AK-74 riflemen, RPG-7 teams |
 | Modern | A city of apartment blocks and high-rises in a mountain valley | M1A2 Abrams, Leopard 2A6, Challenger 2, M2A3 Bradley (+ Warrior allies) | 2S25 Sprut-SD, T-72B3, T-80BVM, T-90M, T-14 Armata, BMP-2, BMP-3 | M4A1, FGM-148 Javelin | AK-74M riflemen, RPG-7 teams |
 
-Tanks halt to fire (they are far less accurate on the move) and pop smoke and back off when badly hit. Every building can be destroyed: shell it until it collapses, or drive a tank straight through it. IFVs fire rapid autocannons, launch anti-tank missiles and drop off a rifle squad near the enemy.
+Armour is modelled in millimetres: every gun has a penetration value that falls off with range, and every vehicle has front, side and rear armour that grows with impact angle, so a Panther shrugs off a Sherman's 76 mm from the front but not from the side. Hits can throw a track, start an engine fire, jam the turret ring or wound a crewman; crews repair in the field. The radar only shows enemies your side has actually spotted. Tanks halt to fire (they are far less accurate on the move) and pop smoke and back off when badly hit. Every building can be destroyed: shell it until it collapses, or drive a tank straight through it. IFVs fire rapid autocannons, launch anti-tank missiles and drop off a rifle squad near the enemy.
 
 ## Controls
 
