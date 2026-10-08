@@ -313,6 +313,7 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
       <kbd>Right click / Shift</kbd><span>Gunner's sight (zoom)</span>
       <kbd>Space</kbd><span>Coaxial machine gun</span>
       <kbd>F / E</kbd><span>IFVs: fire a TOW missile · dismount your squad</span>
+      <kbd>X</kbd><span>Smoke grenades (block enemy sight)</span>
       <kbd>Esc</kbd><span>Pause</span>
     </div>
     <div class="pick" role="group" aria-label="Choose your tank">
@@ -1381,7 +1382,7 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
 // Dense near-field grass: real 3D blades in a square that travels with the camera.
 // Each clump keeps a fixed world spot and wraps around as you drive, reading height and a grass mask
 // from a heightmap texture, swaying in the wind and bending flat under tank tracks.
-let nearGrass = null;
+let nearGrass = null, TERRAIN_HM = null;
 const NG_R = 40, NG_MAX = 90000;
 {
   const W1 = SEG + 1, hm = new Float32Array(W1 * W1 * 2);
@@ -1392,7 +1393,7 @@ const NG_R = 40, NG_MAX = 90000;
     hm[k * 2 + 1] = r > ARENA + 120 ? 0 : smoothstep(3.5, 6, roadDist(x, z)) * (inWater(x, z) ? 0 : 1) * smoothstep(0.8, 0.88, terrainNormal(x, z).y) * smoothstep(CITY_R - 5, CITY_R + 8, Math.hypot(x - VILLAGE.x, z - VILLAGE.y)) * (MAP.sea ? smoothstep(90, 100, z - shoreZ(x)) : 1);
   }
   const hmTex = new THREE.DataTexture(hm, W1, W1, THREE.RGFormat, THREE.FloatType);
-  hmTex.minFilter = hmTex.magFilter = THREE.NearestFilter; hmTex.needsUpdate = true;
+  hmTex.minFilter = hmTex.magFilter = THREE.NearestFilter; hmTex.needsUpdate = true; TERRAIN_HM = hmTex;
   // a clump of three curved, tapered blades
   const pos = [], col = [], idx = [];
   const base = new THREE.Color(0x2c4a16), tip = new THREE.Color(0x9cbf52);
@@ -1763,25 +1764,79 @@ function updateCity(dt) {
 }
 
 // Props: sandbags, anti-tank hedgehogs, telegraph poles with sagging wires
+// swell components [dir x, dir z, wavelength, amplitude, steepness, phase], shared by the shader and floating objects
+const SEA_WAVES = [[0.12, 1, 34, 0.42, 0.55, 0], [-0.35, 1, 19, 0.24, 0.5, 1.7], [0.55, 0.85, 11, 0.11, 0.45, 3.1], [-0.75, 0.6, 6.5, 0.05, 0.4, 0.6]];
+const SEA_K = SEA_WAVES.map(([dx, dz, L, A, Q, ph]) => { const n = Math.hypot(dx, dz), k = 2 * Math.PI / L; return [dx / n, dz / n, k, Math.sqrt(9.8 * k), A, ph]; });
+// Water surface shared by the sea and the lakes: Gerstner swell on a radial grid, coloured by depth with surf at the edges.
+// maxR = 0 makes an endless camera-centred sea; otherwise a disc of that radius (a lake).
+function makeWater(level, amp, maxR) {
+  // The Channel: a camera-centred radial grid displaced by Gerstner swells rolling in toward the beach.
+  // Depth comes from the terrain height texture: turquoise shallows, swells that shrink and break into surf.
+  const rings = [], RN = maxR ? 60 : 170, AN = maxR ? 128 : 192;
+  for (let i = 0; i < RN; i++) rings.push(maxR ? maxR * i / (RN - 1) : i < 70 ? i * 3.5 : 245 * Math.pow(1.034, i - 70));
+  const sp = [], si = [];
+  for (let i = 0; i < RN; i++) for (let j = 0; j < AN; j++) { const a = j / AN * 6.2832, r = rings[i]; sp.push(Math.cos(a) * r, 0, Math.sin(a) * r); }
+  for (let i = 0; i < RN - 1; i++) for (let j = 0; j < AN; j++) { const a = i * AN + j, b = i * AN + (j + 1) % AN, c = a + AN, d = b + AN; si.push(a, b, c, b, d, c); } // wound to face up
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); sg.setAttribute('normal', new THREE.Float32BufferAttribute(sp.map((_, k) => (k % 3 === 1 ? 1 : 0)), 3)); sg.setIndex(si);
+  const seaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.09, metalness: 0.0, envMapIntensity: maxR ? 0.75 : 1.05 });
+  const waveGLSL = SEA_WAVES.map(([dx, dz, L, A, Q, ph]) => { const n = Math.hypot(dx, dz), k = 2 * Math.PI / L, w = Math.sqrt(9.8 * k);
+    return `{ vec2 d = vec2(${(dx / n).toFixed(4)}, ${(dz / n).toFixed(4)}); float th = ${k.toFixed(5)} * dot(d, wp0.xz) - ${w.toFixed(5)} * uTime + ${ph.toFixed(3)};
+      float A = ${A.toFixed(3)} * att, q = ${(Q / (k * A * SEA_WAVES.length)).toFixed(4)}, c = cos(th), s = sin(th);
+      seaDisp += vec3(q * A * d.x * c, A * s, q * A * d.y * c); seaN.x -= d.x * ${k.toFixed(5)} * A * c; seaN.z -= d.y * ${k.toFixed(5)} * A * c; seaN.y -= q * ${k.toFixed(5)} * A * s; crest += s * ${A.toFixed(3)} * att; }`; }).join('\n');
+  seaMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, { uTime: windUniform, uHM: { value: TERRAIN_HM }, uRip: { value: waterNormal }, uFoam: { value: detailTex }, ...cloudU });
+    const hm = `uniform sampler2D uHM;
+      vec2 hmAt(vec2 c) { return texture2D(uHM, (clamp(c, 0.0, ${SEG.toFixed(1)}) + 0.5) / ${(SEG + 1).toFixed(1)}).rg; }
+      float groundAt(vec2 p) { vec2 f = (p + ${HALF.toFixed(1)}) / ${CELL.toFixed(1)}, i = floor(f), t = f - i;
+        return mix(mix(hmAt(i).r, hmAt(i + vec2(1.0, 0.0)).r, t.x), mix(hmAt(i + vec2(0.0, 1.0)).r, hmAt(i + vec2(1.0, 1.0)).r, t.x), t.y); }\n`;
+    sh.vertexShader = 'uniform float uTime; varying float vDepth, vCrest; varying vec3 vSeaW, vSeaN;\n' + hm + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', `
+        vec3 wp0 = (modelMatrix * vec4(position, 1.0)).xyz;
+        float depth = ${level.toFixed(2)} - groundAt(wp0.xz);
+        float att = ${amp.toFixed(3)} * clamp(depth / 5.0, 0.1, 1.0) * (1.0 - smoothstep(900.0, 1600.0, length(wp0.xz - cameraPosition.xz)));
+        vec3 seaDisp = vec3(0.0), seaN = vec3(0.0, 1.0, 0.0); float crest = 0.0;
+        ${waveGLSL}
+        vDepth = depth; vCrest = crest; vSeaN = normalize(seaN);
+        vec3 objectNormal = vSeaN;`)
+      .replace('#include <begin_vertex>', 'vec3 transformed = position + seaDisp; vSeaW = wp0 + seaDisp;');
+    sh.fragmentShader = 'uniform float uTime; uniform sampler2D uRip, uFoam; varying float vDepth, vCrest; varying vec3 vSeaW, vSeaN;\n#define CLOUD_SHADOWS\n' + CLOUD_GLSL + sh.fragmentShader
+      .replace('#include <color_fragment>', `
+        float shallow = smoothstep(7.0, 0.4, vDepth);
+        vec3 deepC = vec3(0.045, 0.13, 0.16), shalC = vec3(0.16, 0.36, 0.34), sandC = vec3(0.55, 0.5, 0.38);
+        diffuseColor.rgb = mix(deepC, shalC, shallow);
+        diffuseColor.rgb = mix(diffuseColor.rgb, sandC, smoothstep(0.7, 0.05, vDepth) * 0.55);
+        // surf: churned white water where the swell meets the sand, whitecaps on the steepest crests
+        float fn = texture2D(uFoam, vSeaW.xz * 0.07 + vec2(0.0, uTime * 0.05)).r * texture2D(uFoam, vSeaW.xz * 0.023 - vec2(uTime * 0.01, 0.0)).r;
+        float surf = smoothstep(${(0.2 + 1.2 * amp).toFixed(2)}, 0.1, vDepth) * (0.55 + 0.45 * sin(vSeaW.z * 0.35 - uTime * 1.6 + fn * 6.0)) * ${Math.min(1, amp * 1.5 + 0.2).toFixed(2)};
+        float caps = smoothstep(0.32, 0.6, vCrest) * 0.8;
+        float foam = clamp(max(surf, caps) * smoothstep(0.25, 0.7, fn * 2.0), 0.0, 1.0);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.9), foam);`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.85, foam);')
+      .replace('#include <normal_fragment_maps>', `
+        vec3 r1 = texture2D(uRip, vSeaW.xz * 0.045 + vec2(uTime * 0.012, uTime * 0.02)).xyz * 2.0 - 1.0;
+        vec3 r2 = texture2D(uRip, vSeaW.xz * 0.013 - vec2(uTime * 0.006, -uTime * 0.009)).xyz * 2.0 - 1.0;
+        float rDist = length(vSeaW - cameraPosition);
+        vec3 nW = normalize(vSeaN + vec3(r1.x + r2.x, 0.0, r1.y + r2.y) * 0.22 * (1.0 - foam) * (1.0 - 0.8 * smoothstep(30.0, 240.0, rDist)));
+        normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);`)
+      .replace('#include <lights_fragment_begin>', 'float cloudShade = cloudShadowAt(vSeaW);\n#include <lights_fragment_begin>');
+  };
+  const sea = new THREE.Mesh(sg, seaMat); sea.receiveShadow = true; sea.frustumCulled = false; sea.renderOrder = 1; // after the land, so hidden water costs nothing
+  sea.position.y = level;
+  return sea;
+}
 // =====================================================================
 // D-Day: the Channel, surf, beach obstacles, bunkers on the bluffs, landing craft and the fleet offshore
 // =====================================================================
 const beach = { bunkers: [], ships: [], shellT: 4 };
+if (MAP.lake && MAP_ERA !== 'korea') { water.visible = false; const lake = makeWater(LAKE_Y, 0.22, WATER_R); lake.position.set(LAKE.x, LAKE_Y, LAKE.z); scene.add(lake); }
+function seaHeight(x, z) {
+  const att = clamp((SEA_Y - terrainHeight(x, z)) / 5, 0.1, 1), t = windUniform.value;
+  let h = SEA_Y; for (const [dx, dz, k, w, A, ph] of SEA_K) h += A * att * Math.sin(k * (dx * x + dz * z) - w * t + ph);
+  return h;
+}
 if (MAP.sea) {
   water.visible = false;
-  const seaMat = water.material.clone(); seaMat.onBeforeCompile = water.material.onBeforeCompile;
-  seaMat.color.set(0x35606a); seaMat.opacity = 0.93; seaMat.normalScale.set(0.45, 0.45);
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(5000, 2400).rotateX(-Math.PI / 2), seaMat);
-  sea.position.set(0, SEA_Y, -300 - 1200 + 45); sea.receiveShadow = true; scene.add(sea);
-  beach.seaMat = seaMat;
-  // breaking surf: a frothy band that follows the waterline and rolls in and out
-  const foamTex = canvasTex(256, (g, S) => { const rnd = mulberry32(31); g.clearRect(0, 0, S, S); for (let i = 0; i < 1600; i++) { const y = rnd() * S; g.fillStyle = `rgba(255,255,255,${(0.2 + rnd() * 0.6) * (1 - Math.abs(y / S - 0.5) * 1.6)})`; g.beginPath(); g.ellipse(rnd() * S, y, 3 + rnd() * 14, 1.5 + rnd() * 4, 0, 0, 6.3); g.fill(); } });
-  const fpos = [], fuv = [], N = 400;
-  for (let i = 0; i <= N; i++) { const x = -1200 + i * 2400 / N, z = shoreZ(x); fpos.push(x, SEA_Y + 0.08, z - 7, x, SEA_Y + 0.08, z + 5); fuv.push(i * 0.25, 0, i * 0.25, 1); }
-  const fidx = []; for (let i = 0; i < N; i++) { const a = i * 2; fidx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fpos, 3)); fg.setAttribute('uv', new THREE.Float32BufferAttribute(fuv, 2)); fg.setIndex(fidx); fg.computeVertexNormals();
-  beach.foam = new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ map: foamTex, transparent: true, depthWrite: false, opacity: 0.85, color: 0xdfe6e6 }));
-  scene.add(beach.foam);
+  const sea = makeWater(SEA_Y, 1, 0); scene.add(sea); beach.sea = sea;
   // obstacle belt: Czech hedgehogs, wooden stakes and Belgian gates in loose staggered rows
   const steel = [], wood = [];
   const hedgehog = (x, z, s) => { const y = terrainHeight(x, z), rot = rand() * 3; for (let i = 0; i < 3; i++) { const b = new THREE.BoxGeometry(0.2, 0.2, 2.4 * s); b.rotateX([0.7, -0.7, 0][i]); b.rotateY([0, 0, Math.PI / 2][i] + rot); if (i === 2) b.rotateZ(0.7); b.translate(x, y + 0.75 * s, z); steel.push(b); } addCollider({ type: 'circle', x, z, r: 0.9, h: 1.5, prop: true }); };
@@ -1831,6 +1886,124 @@ if (MAP.sea) {
     beach.ships.push({ m, guns, W, rot });
   }
 }
+// =====================================================================
+// Smoke screens, DD swimming tanks and Higgins boats
+// =====================================================================
+// Smoke grenades: a wall of white smoke that blocks line of sight for about twenty seconds
+const smokeScreens = [];
+function popSmoke(t) {
+  for (let i = -3; i <= 3; i++) {
+    const a = t.heading + t.turretYaw + i * 0.22, d = rr(12, 16), x = t.pos.x + Math.sin(a) * d, z = t.pos.z + Math.cos(a) * d;
+    smokeScreens.push({ x, z, y: terrainHeight(x, z) + 2.5, r: 6.5, t0: game.time, life: 26 });
+    firePool.emit({ x, y: terrainHeight(x, z) + 1, z, life: 0.15, s0: 1.5, s1: 3, c0: [12, 8, 4, 1], c1: [3, 1, 0.2, 0] });
+  }
+  sfx.rocket(t.pos);
+}
+function smokeBlocks(a, b) {
+  for (const sc of smokeScreens) {
+    const age = game.time - sc.t0; if (age < 1.2 || age > sc.life - 3) continue;
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, L2 = dx * dx + dy * dy + dz * dz || 1;
+    const k = clamp(((sc.x - a.x) * dx + (sc.y - a.y) * dy + (sc.z - a.z) * dz) / L2, 0, 1);
+    if (Math.hypot(a.x + dx * k - sc.x, a.y + dy * k - sc.y, a.z + dz * k - sc.z) < sc.r) return true;
+  }
+  return false;
+}
+function updateSmoke(dt) {
+  for (let i = smokeScreens.length - 1; i >= 0; i--) {
+    const sc = smokeScreens[i], age = game.time - sc.t0;
+    if (age > sc.life) { smokeScreens.splice(i, 1); continue; }
+    if (age < sc.life - 6 && Math.random() < dt * (age < 4 ? 16 : 5)) smokePool.emit({ x: sc.x + rr(-3, 3), y: sc.y - 2 + rr(0, 2.5), z: sc.z + rr(-3, 3), vx: wind.x * 0.6 + rr(-0.5, 0.5), vy: rr(0.2, 0.8), vz: wind.z * 0.6 + rr(-0.5, 0.5), life: rr(8, 14), s0: rr(3, 5), s1: rr(10, 16), c0: [0.86, 0.87, 0.85, 0.92], c1: [0.92, 0.92, 0.9, 0], drag: 0.6 });
+  }
+}
+// foam and spray thrown up by anything moving through the water
+function wake(x, z, k, spray) {
+  smokePool.emit({ x: x + rr(-0.8, 0.8), y: SEA_Y + 0.25, z: z + rr(-0.8, 0.8), vx: rr(-0.6, 0.6), vy: 0.15, vz: rr(-0.6, 0.6), life: rr(2.5, 4.5), s0: 0.9, s1: 3.6 * k, c0: [0.95, 0.97, 0.97, 0.5], c1: [1, 1, 1, 0], drag: 1 });
+  if (spray) smokePool.emit({ x, y: SEA_Y + 0.6, z, vx: rr(-1.5, 1.5), vy: rr(1.5, 3), vz: rr(-1.5, 1.5), life: 0.9, s0: 0.5, s1: 1.8, c0: [0.95, 0.97, 0.98, 0.6], c1: [1, 1, 1, 0], drag: 1.5, grav: 3 });
+}
+// Duplex Drive Sherman: a raised canvas flotation screen and propellers; the screen drops when the tracks bite
+const ddMat = new THREE.MeshStandardMaterial({ color: 0x8a8462, roughness: 0.95, side: THREE.DoubleSide });
+function addDDScreen(t) {
+  const L = 7.0, W = 3.5, H = 1.9, parts = [];
+  for (const sx of [-1, 1]) parts.push(new THREE.BoxGeometry(0.06, H, L).translate(sx * W / 2, H / 2, 0));
+  for (const sz of [-1, 1]) parts.push(new THREE.BoxGeometry(W, H, 0.06).translate(0, H / 2, sz * L / 2));
+  for (const y of [H * 0.33, H * 0.66]) parts.push(new THREE.BoxGeometry(W + 0.12, 0.05, 0.05).translate(0, y, L / 2 + 0.03), new THREE.BoxGeometry(W + 0.12, 0.05, 0.05).translate(0, y, -L / 2 - 0.03));
+  const m = new THREE.Mesh(merge(parts), ddMat); m.castShadow = true;
+  const grp = new THREE.Group(); grp.position.y = 0.95; grp.add(m); t.v.root.add(grp);
+  t.screen = grp; t.screenUp = true; t.dd = true; t.screenT = 0;
+}
+function updateDD(t, dt) {
+  const depth = waterAt(t.pos.x, t.pos.z) - terrainHeight(t.pos.x, t.pos.z);
+  if (t.screenUp && depth < 0.55) { t.screenUp = false; t.screenT = 0; if (t.isPlayer) { feed('Ashore · screen down · weapons free', false); sfx.reloaded(); } }
+  if (!t.screenUp && t.screenT < 1.3) { t.screenT += dt; t.screen.scale.y = Math.max(0.08, 1 - t.screenT / 1.2); } // still amphibious: it can wade back through the surf
+  if (t.floating && Math.random() < dt * 18) { const fw = t.forward(_v1), sp = Math.abs(t.speed); wake(t.pos.x - fw.x * 3.6, t.pos.z - fw.z * 3.6, 1 + sp * 0.3, false); if (sp > 1.5 && Math.random() < 0.4) wake(t.pos.x + fw.x * 3.6, t.pos.z + fw.z * 3.6, 0.6, true); }
+}
+// LCVP: rides the swell in, beaches, drops the ramp and lets the squad out
+const boats = [];
+const lcvpMat = new THREE.MeshStandardMaterial({ color: 0x56603e, roughness: 0.72, metalness: 0.25 });
+const LCVP_GEO = merge([
+  new THREE.BoxGeometry(3.2, 0.3, 10.2).translate(0, 0.0, -0.1), // bottom
+  new THREE.BoxGeometry(0.16, 1.7, 10.2).translate(1.52, 0.85, -0.1), new THREE.BoxGeometry(0.16, 1.7, 10.2).translate(-1.52, 0.85, -0.1), // sides
+  new THREE.BoxGeometry(3.2, 1.9, 1.0).translate(0, 0.95, -4.8), // stern
+  new THREE.BoxGeometry(0.9, 0.9, 0.9).translate(0.9, 2.2, -4.6), // coxswain station
+  new THREE.BoxGeometry(3.4, 0.6, 9.8).translate(0, -0.35, -0.2), // keel
+]);
+const RAMP_GEO = new THREE.BoxGeometry(3.0, 1.85, 0.16).translate(0, 0.92, 0);
+function launchBoat(x, z, riders) {
+  const grp = new THREE.Group(), hull = new THREE.Mesh(LCVP_GEO, lcvpMat), ramp = new THREE.Group(), rm = new THREE.Mesh(RAMP_GEO, lcvpMat);
+  hull.castShadow = hull.receiveShadow = rm.castShadow = true; ramp.position.set(0, 0.1, 5.0); ramp.add(rm); grp.add(hull, ramp); grp.rotation.order = 'YXZ';
+  scene.add(grp);
+  const b = { grp, ramp, x, z, y: SEA_Y, heading: 0, speed: rr(6, 7.5), state: 'run', t: 0, riders };
+  riders.forEach((s, i) => { s.boat = b; s.boatSlot = [i % 2 ? 0.65 : -0.65, 3.4 - Math.floor(i / 2) * 1.0]; s.crouch = 0.5; });
+  boats.push(b);
+  return b;
+}
+function updateBoats(dt) {
+  for (let i = boats.length - 1; i >= 0; i--) {
+    const b = boats[i]; b.t += dt;
+    const c = Math.cos(b.heading), s = Math.sin(b.heading), bowX = b.x + s * 5.5, bowZ = b.z + c * 5.5;
+    if (b.state === 'run') {
+      b.x += s * b.speed * dt; b.z += c * b.speed * dt;
+      if (SEA_Y - terrainHeight(bowX, bowZ) < 0.75) { b.state = 'ramp'; b.t = 0; if (b.riders.includes(player.soldier)) feed('Ramp going down!', true); }
+      if (Math.random() < dt * 20) wake(b.x - s * 5, b.z - c * 5, 1.4, false);
+      if (Math.random() < dt * 8) wake(bowX, bowZ, 0.8, true);
+    } else if (b.state === 'ramp') {
+      b.ramp.rotation.x = Math.min(1.85, b.t * 1.8);
+      if (b.t > 1.1) {
+        b.riders.forEach((r, k) => { if (!r.alive) { r.boat = null; return; } r.boat = null; const [ox] = r.boatSlot; r.pos.set(bowX + ox * c + rr(-0.5, 0.5), 0, bowZ + 1.5 + Math.floor(k / 2) * 0.9); r.pos.y = terrainHeight(r.pos.x, r.pos.z); r.vel.set(0, 0, 0); r.crouchT = 0; });
+        if (b.riders.includes(player.soldier)) bigMsg('GO! GO! GO!', 'Get off the beach and up the bluffs', 2.5);
+        b.state = 'wait'; b.t = 0;
+      }
+    } else if (b.state === 'wait') { if (b.t > 5) { b.state = 'leave'; b.t = 0; } }
+    else {
+      b.ramp.rotation.x = Math.max(0, 1.85 - b.t * 1.5);
+      b.x -= s * 3.5 * dt; b.z -= c * 3.5 * dt;
+      if (b.t > 35) { scene.remove(b.grp); boats.splice(i, 1); continue; }
+    }
+    // ride the swell; sit on the sand once beached
+    const hF = seaHeight(bowX, bowZ), hB = seaHeight(b.x - s * 5, b.z - c * 5), hL = seaHeight(b.x + c * 1.6, b.z - s * 1.6), hR = seaHeight(b.x - c * 1.6, b.z + s * 1.6);
+    b.y = Math.max((hF + hB) / 2 + 0.3, terrainHeight(b.x, b.z) + 0.4);
+    b.grp.position.set(b.x, b.y, b.z);
+    b.grp.rotation.set(-Math.atan2(hF - hB, 10.5) * 0.8, b.heading, Math.atan2(hL - hR, 3.2) * 0.6);
+  }
+}
+function clearBoats() { for (const b of boats) scene.remove(b.grp); boats.length = 0; for (const s of soldiers) s.boat = null; smokeScreens.length = 0; }
+// H-Hour: the player's force starts at sea
+function beachLanding() {
+  if (!MAP.sea) return;
+  const pe = playerEnt();
+  if (player.tank) {
+    for (const t of tanks) if (t.team === 'blue' && t.alive) {
+      t.pos.z = shoreZ(t.pos.x) - (t.isPlayer ? 105 : rr(100, 125)); t.heading = 0; t.floating = true;
+      addDDScreen(t); t.alignToGround(1); t.v.root.position.copy(t.pos);
+    }
+    bigMsg('H-HOUR', 'Swim your DD Sherman ashore. The screen drops when your tracks touch sand.', 4);
+  } else {
+    const riders = [player.soldier, ...soldiers.filter((s) => s.follow && s.alive)];
+    launchBoat(pe.pos.x, shoreZ(pe.pos.x) - 120, riders);
+    cam.yaw = 0; cam.pitch = 0;
+    bigMsg('H-HOUR', 'Stay down in the boat. When the ramp drops, get off the beach.', 4);
+  }
+}
 // German MG crews dug in beside the bunkers; they come back for each wave while their bunker stands
 function manBunkers() {
   for (const b of beach.bunkers) {
@@ -1846,17 +2019,21 @@ function manBunkers() {
 function updateBeach(dt) {
   if (!MAP.sea) return;
   const t = game.time;
-  if (beach.seaMat) beach.foam.material.map.offset.set(t * 0.01, Math.sin(t * 0.5) * 0.12), beach.foam.position.z = Math.sin(t * 0.5) * 1.6;
+  const cp = camera.position; beach.sea.position.set(Math.round(cp.x / 3.5) * 3.5, SEA_Y, Math.round(cp.z / 3.5) * 3.5);
   if (game.mode !== 'play') return;
   // German mortars and 88s walking shells across the sand
   beach.shellT -= dt;
   const pe = playerEnt();
   if (beach.shellT <= 0 && pe && beach.bunkers.some((b) => b.alive)) {
     beach.shellT = rr(2.5, 6) / Math.max(0.5, beach.bunkers.filter((b) => b.alive).length / beach.bunkers.length);
-    const x = pe.pos.x + rr(-160, 160), z = shoreZ(x) + rr(4, 90);
+    // the sand, or the water around the incoming boats and swimming tanks
+    const afloat = [...boats.filter((b) => b.state === 'run'), ...tanks.filter((t) => t.floating && t.alive)], tg = afloat.length && Math.random() < 0.45 ? afloat[Math.floor(Math.random() * afloat.length)] : null;
+    const x = tg ? (tg.pos?.x ?? tg.x) + rr(-30, 30) : pe.pos.x + rr(-160, 160), z = tg ? (tg.pos?.z ?? tg.z) + rr(-20, 45) : shoreZ(x) + rr(4, 90);
+    const wet = terrainHeight(x, z) < SEA_Y - 0.3;
     if (Math.hypot(x - pe.pos.x, z - pe.pos.z) > 28) {
-      const p = new THREE.Vector3(x, terrainHeight(x, z) + 0.3, z);
-      particles.explosion(p, 1, true); decals.place(x, z, 3); sfx.explosion(p, 1); nearMissShake(p);
+      const p = new THREE.Vector3(x, wet ? SEA_Y : terrainHeight(x, z) + 0.3, z);
+      if (wet) particles.splash(p, 1.8); else { particles.explosion(p, 1, true); decals.place(x, z, 3); }
+      sfx.explosion(p, 1); nearMissShake(p);
       splashDamage(p, 6, 90, { team: 'red' });
       for (const sd of soldiers) if (sd.alive && sd.team === 'blue' && sd.pos.distanceTo(p) < 20) sd.supp = Math.min(2, sd.supp + 0.8);
     }
@@ -2932,9 +3109,11 @@ class Tank {
   forward(out = _v1) { return out.set(Math.sin(this.heading), 0, Math.cos(this.heading)); }
   alignToGround(t) {
     const s = Math.sin(this.heading), c = Math.cos(this.heading), x = this.pos.x, z = this.pos.z;
-    const hf = terrainHeight(x + s * 3.0, z + c * 3.0), hb = terrainHeight(x - s * 3.0, z - c * 3.0);
-    const hl = terrainHeight(x + c * 1.55, z - s * 1.55), hr = terrainHeight(x - c * 1.55, z + s * 1.55);
-    const center = terrainHeight(x, z);
+    // afloat (DD tanks), the hull rides the swell; aground it follows the terrain
+    const H = this.floating ? (a, b) => seaHeight(a, b) - 1.15 : terrainHeight;
+    const hf = H(x + s * 3.0, z + c * 3.0), hb = H(x - s * 3.0, z - c * 3.0);
+    const hl = H(x + c * 1.55, z - s * 1.55), hr = H(x - c * 1.55, z + s * 1.55);
+    const center = H(x, z);
     const targetY = Math.max((hf + hb + hl + hr) / 4, center - 0.1);
     this.pos.y = t >= 1 ? targetY : damp(this.pos.y, targetY, 12, t);
     const fz = _v1.set(s * 6, hf - hb, c * 6).normalize();
@@ -2950,7 +3129,10 @@ class Tank {
     const v = this.v;
     if (this.alive) {
       const { throttle, steer } = this.input;
-      let target = (throttle > 0 ? throttle * this.maxF : throttle * this.maxR) * (this.pos.y < waterAt(this.pos.x, this.pos.z) + 0.2 ? 0.5 : 1);
+      const depthHere = waterAt(this.pos.x, this.pos.z) - terrainHeight(this.pos.x, this.pos.z);
+      this.floating = !!this.dd && depthHere > 1.15;
+      let target = (throttle > 0 ? throttle * this.maxF : throttle * this.maxR) * (this.floating ? 0.3 : this.pos.y < waterAt(this.pos.x, this.pos.z) + 0.2 ? 0.5 : 1);
+      if (this.floating) target = clamp(target, -1.2, 3.8); // twin propellers: about four knots
       target *= 1 - clamp(this.slope * 1.4, -0.25, 0.65) * Math.sign(target || 1);
       const braking = Math.sign(target) !== Math.sign(this.speed) && Math.abs(this.speed) > 0.2;
       this.speed = approach(this.speed, target, (braking ? 12 : throttle ? 5 : 3.5) * dt);
@@ -2962,7 +3144,7 @@ class Tank {
       this.pos.x += fw.x * this.speed * dt; this.pos.z += fw.z * this.speed * dt;
       this.collide(dt);
       // the lake is impassable for tanks: stop at the waterline
-      if (terrainHeight(this.pos.x, this.pos.z) < waterAt(this.pos.x, this.pos.z) + 0.25) { this.pos.x = prevX; this.pos.z = prevZ; this.speed *= -0.2; if (this.isPlayer && !this.wetWarned) { this.wetWarned = true; feed('Too deep to ford', true); setTimeout(() => (this.wetWarned = false), 4000); } }
+      if (!this.dd && terrainHeight(this.pos.x, this.pos.z) < waterAt(this.pos.x, this.pos.z) + 0.25) { this.pos.x = prevX; this.pos.z = prevZ; this.speed *= -0.2; if (this.isPlayer && !this.wetWarned) { this.wetWarned = true; feed('Too deep to ford', true); setTimeout(() => (this.wetWarned = false), 4000); } }
       // pitch dynamics from acceleration
       const acc = (this.speed - (this.prevSpeed ?? this.speed)) / Math.max(dt, 1e-3); this.prevSpeed = this.speed;
       this.pitchVel += (-acc * 0.004 - this.pitchOff * 60 - this.pitchVel * 7) * dt;
@@ -2973,6 +3155,7 @@ class Tank {
       this.trackDist[1] += moved - this.turn * dt * 1.55;
     }
     this.alignToGround(dt);
+    if (this.screen) updateDD(this, dt);
     v.root.position.copy(this.pos);
     _q1.setFromEuler(new THREE.Euler(this.pitchOff, 0, this.rollOff));
     v.root.quaternion.copy(this.quat).multiply(_q1);
@@ -3071,9 +3254,10 @@ class Tank {
   barrelDir(out) { return out.set(0, 0, 1).applyQuaternion(this.v.barrel.getWorldQuaternion(_q1)).normalize(); }
   fire() {
     if (!this.alive || this.reload > 0) return false;
+    if (this.screenUp) { if (this.isPlayer && game.time - (this.screenMsgT || -9) > 3) { this.screenMsgT = game.time; feed('Flotation screen up: you can fire once you are ashore', true); } return false; }
     this.reload = this.reloadTime;
     const p = this.muzzleWorld(new THREE.Vector3()), d = this.barrelDir(new THREE.Vector3());
-    if (!this.isPlayer) { d.x += rr(-1, 1) * this.spread; d.y += rr(-0.5, 1) * this.spread; d.z += rr(-1, 1) * this.spread; d.normalize(); }
+    if (!this.isPlayer) { const sp = this.spread * (1 + Math.abs(this.speed) * 0.18); d.x += rr(-1, 1) * sp; d.y += rr(-0.5, 1) * sp; d.z += rr(-1, 1) * sp; d.normalize(); }
     if (this.K.ac) { // autocannon: light HE rounds in bursts
       const sp = this.isPlayer ? 0.0035 : 0.004; d.x += rr(-sp, sp); d.y += rr(-sp, sp); d.z += rr(-sp, sp); d.normalize();
       shells.spawn(p, d, 1050, this, false, { ac: true, acDmg: this.K.acDmg ?? 0.15 });
@@ -3098,6 +3282,7 @@ class Tank {
   }
   damage(amount, from, hitPoint) {
     if (!this.alive) return;
+    if (!this.isPlayer && !this.smoked && this.hp - amount < this.maxHp * 0.55 && this.hp - amount > 0) { this.smoked = true; popSmoke(this); if (this.ai) this.ai.reverseT = 3; } // hit hard: smoke and back off
     if (this.team === 'blue') amount *= this.isPlayer ? EASE.playerArmour : EASE.allyArmour; // heavier friendly armour
     this.hp -= amount; this.lastHit = game.time;
     if (this.hp <= 0) { this.hp = 0; this.destroy(); return; }
@@ -3278,11 +3463,12 @@ function segmentHit(a, b, owner, skipTrees = false) {
   if (typeof soldiers !== 'undefined') for (const sd of soldiers) {
     if (!sd.alive || sd === owner) continue;
     const L2 = dx * dx + dz * dz; if (L2 < 1e-9) continue;
+    const inBoat = !!sd.boat;
     const tt = clamp(((sd.pos.x - a.x) * dx + (sd.pos.z - a.z) * dz) / L2, 0, 1);
     const px = a.x + dx * tt - sd.pos.x, pz = a.z + dz * tt - sd.pos.z;
     if (px * px + pz * pz > 0.42 * 0.42) continue;
     const y = a.y + dy * tt - sd.pos.y, h = sd.height();
-    if (y < 0 || y > h) continue;
+    if (y < (inBoat ? 1.25 : 0) || y > h) continue; // the boat's sides stop rounds below the gunwale
     consider(tt, 'soldier', { soldier: sd, head: y > h - 0.3 });
   }
   if (best) best.point = new THREE.Vector3(a.x + dx * best.t, a.y + dy * best.t, a.z + dz * best.t);
@@ -3892,7 +4078,7 @@ function reinforceAllies() {
 function reinforceInfantry() {
   // top friendly rifle squads back up to strength for the next wave
   const B = BATTLE[battleName], have = squads.filter((q) => q.team === 'blue' && q.members.some((m) => m.alive)).length;
-  for (let i = have; i < B.blue; i++) spawnSquad(B.size, 'blue');
+  for (let i = have; i < B.blue; i++) { const sq = spawnSquad(B.size, 'blue'); if (MAP.sea && sq) { const x = sq.members[0].pos.x; launchBoat(x, shoreZ(x) - rr(95, 150), sq.members); } } // on the beach map they come in by boat
 }
 function nextWave() {
   game.wave++;
@@ -3919,7 +4105,7 @@ function updateWaves(dt) {
   } else if (game.waveTimer <= 0 && !tanks.some((t) => t.team === 'red' && t.alive) && !redInf && !(game.squadsToSpawn > 0)) {
     game.waveTimer = 7;
     bigMsg(`WAVE ${game.wave} CLEARED`, 'Field repairs and resupply', 3);
-    const pt = playerEnt(); pt.hp = Math.min(pt.maxHp, pt.hp + 35); game.ammo = Math.max(game.ammo, pt.K?.ac ? 400 : 40); if (pt.K?.tow) game.tow = pt.K.tow; if (pt.K?.carry) pt.dismounted = false;
+    const pt = playerEnt(); pt.hp = Math.min(pt.maxHp, pt.hp + 35); game.ammo = Math.max(game.ammo, pt.K?.ac ? 400 : 40); if (pt.K?.tow) game.tow = pt.K.tow; if (pt.K?.carry) pt.dismounted = false; game.smoke = 2;
     if (player.soldier) { const G = GUNS[ERA_INF[era].gun], L = LAUNCHERS[ERA_INF[era].at]; inf.reserve = G.reserve; inf.at = Math.min(L.max, inf.at + 2); inf.nades = Math.min(4, inf.nades + 2); if (!inf.atLoaded) inf.reloadT = Math.min(inf.reloadT, 0.1); spawnFireteam(); }
     reinforceAllies();
   }
@@ -3931,6 +4117,7 @@ function cleanupWrecks() {
   while (wrecks.length > 8) { const w = wrecks.shift(); w.dispose(); tanks.splice(tanks.indexOf(w), 1); for (let i = emitters.length - 1; i >= 0; i--) if (emitters[i].tank === w) emitters.splice(i, 1); }
 }
 function hasLOS(a, b) {
+  if (smokeScreens.length && smokeBlocks(a, b)) return false;
   const steps = 16;
   for (let i = 1; i < steps; i++) { const t = i / steps; const x = lerp(a.x, b.x, t), y = lerp(a.y, b.y, t), z = lerp(a.z, b.z, t); if (y < terrainHeight(x, z) + 0.3) return false; }
   for (const c of buildings) {
@@ -4054,6 +4241,7 @@ function updateAI(t, dt) {
   // missile carriers open up on tanks from range
   t.towT = (t.towT ?? rr(4, 10)) - dt;
   if (t.K.tow && t.towT <= 0 && los && fd > 60 && fd < 650 && err < 0.12 && ai.los > 1) { t.towT = rr(14, 22) * (t.team === 'red' ? EASE.enemyReload : 1); fireTOW(t, tgt.clone()); }
+  if (los && !t.K.ac && t.reload < 0.8 && err < 0.15 && fd > 40 && !t.floating && ai.reverseT <= 0) t.input.throttle = 0; // short halt to shoot
   if (los && err < (t.K.ac ? 0.05 : 0.03) && t.reload <= 0 && ai.los > ai.fireDelay && foe.alive) t.fire();
 }
 
@@ -4079,6 +4267,8 @@ function updatePlayer(dt) {
       else feed('Your squad is already out', true);
     }
     game.eHeld = !!keys.KeyE;
+    if (keys.KeyX && !game.xHeld) { if (game.smoke > 0) { popSmoke(t); game.smoke--; feed(`Smoke out · ${game.smoke} salvo${game.smoke === 1 ? '' : 's'} left`, false); } else feed('No smoke left until the next wave', true); }
+    game.xHeld = !!keys.KeyX;
     const th = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + touch.throttle;
     const st = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0) + touch.steer;
     t.input.throttle = clamp(th, -1, 1); t.input.steer = clamp(st, -1, 1);
@@ -4463,6 +4653,16 @@ class Soldier {
   dispose() { this.v.root.visible = false; }
   update(dt) {
     const v = this.v;
+    if (this.boat && this.alive) { // crouched in a landing craft
+      const b = this.boat, [ox, oz] = this.boatSlot, c = Math.cos(b.heading), s = Math.sin(b.heading);
+      this.pos.set(b.x + ox * c + oz * s, b.y + 0.15, b.z - ox * s + oz * c); this.vel.set(0, 0, 0); this.desired.set(0, 0, 0); this.speed = 0; this.vy = 0;
+      if (!this.isPlayer) this.heading = b.heading;
+      this.crouch = damp(this.crouch, 0.55, 6, dt);
+      v.legL.rotation.x = v.legR.rotation.x = -0.75; v.kneeL.rotation.x = v.kneeR.rotation.x = 1.3; v.body.position.set(0, -0.3, 0); v.body.rotation.x = 0;
+      v.spine.rotation.x = 0.2; v.arms.rotation.x = 0.4; v.head.rotation.x = -0.05;
+      v.root.position.copy(this.pos); v.root.rotation.y = this.heading;
+      return;
+    }
     if (!this.alive) {
       this.deadT += dt;
       const g = terrainHeight(this.pos.x, this.pos.z);
@@ -4929,7 +5129,7 @@ function updateSoldiers(dt) {
   let dead = 0;
   for (let i = soldiers.length - 1; i >= 0; i--) {
     const s = soldiers[i];
-    if (!s.isPlayer && s.alive && s.ai && game.mode !== 'title') updateSoldierAI(s, dt);
+    if (!s.isPlayer && s.alive && s.ai && !s.boat && game.mode !== 'title') updateSoldierAI(s, dt);
     s.update(dt);
     // keep the field readable: bodies stay for a while, oldest cleared first in big battles
     if (!s.alive && !s.isPlayer && (s.deadT > 45 || ++dead > 70)) { s.dispose(); soldiers.splice(i, 1); }
@@ -5252,8 +5452,8 @@ function updateInfantryPlayer(dt) {
   const speed = (s.prone > 0.5 ? 1.1 : s.crouchT ? 2.2 : sprint ? 7 : 4.4) * (ads ? 0.55 : 1) * (inWater(s.pos.x, s.pos.z) ? 0.55 : 1);
   const mv = _v1.set(0, 0, 0).addScaledVector(_fw, f).addScaledVector(_rt, r);
   if (mv.lengthSq() > 1) mv.normalize();
-  s.desired.copy(mv.multiplyScalar(speed));
-  if (keys.Space && s.grounded && s.vy <= 0) { if (s.proneT) s.proneT = 0; else { s.vy = 4.8; s.grounded = false; s.crouchT = 0; } }
+  s.desired.copy(mv.multiplyScalar(s.boat ? 0 : speed));
+  if (keys.Space && s.grounded && s.vy <= 0 && !s.boat) { if (s.proneT) s.proneT = 0; else { s.vy = 4.8; s.grounded = false; s.crouchT = 0; } }
   // weapon switching
   const want = keys.Digit1 ? 0 : keys.Digit2 ? 1 : null;
   if (keys.KeyQ && !inf.qHeld) { inf.qHeld = true; inf.weapon ^= 1; inf.swapT = 0.45; inf.lock = 0; }
@@ -5436,7 +5636,7 @@ function updateMarkers() {
 }
 function updateHUD(dt) {
   camera.updateMatrixWorld(); // project markers with this frame's camera, not last frame's
-  $('clu').hidden = true; $('adsRet').hidden = true; $('infCross').hidden = true; $('wLabel').textContent = player.tank ? player.tank.K.gun + (player.tank.K.tow ? ` · TOW ${game.tow} [F]` : '') + (player.tank.K.carry && !player.tank.dismounted ? ' · squad [E]' : '') : '';
+  $('clu').hidden = true; $('adsRet').hidden = true; $('infCross').hidden = true; $('wLabel').textContent = player.tank ? player.tank.K.gun + (player.tank.K.tow ? ` · TOW ${game.tow} [F]` : '') + (player.tank.K.carry && !player.tank.dismounted ? ' · squad [E]' : '') + ` · smoke ${game.smoke ?? 0} [X]` : '';
   if (player.soldier) return updateInfantryHUD(dt);
   $('w2Label').textContent = 'Coax MG';
   const t = player.tank; if (!t) return;
@@ -5656,6 +5856,7 @@ function resetWorld() {
   flyingTurrets.length = 0;
   for (const s of shells.list) if (s.mesh) scene.remove(s.mesh); shells.list.length = 0;
   clearSoldiers();
+  clearBoats();
   resetSupport();
   SHELL_SPEED = ERAS[era].shell;
   grade.uniforms.eraTint.value.set(...ERAS[era].tint); grade.uniforms.eraSat.value = ERAS[era].sat;
@@ -5671,7 +5872,7 @@ function startGame() {
   sfx.init();
   game.role = titleRole;
   resetWorld();
-  Object.assign(game, { squadsToSpawn: 0, mode: 'play', wave: 0, kills: 0, score: 0, waveTimer: 0, toSpawn: 0, ammo: player.tank?.K.ac ? 400 : 40, tow: player.tank?.K.tow || 0, towT: 0, mgHeat: 0, mgCool: false });
+  Object.assign(game, { squadsToSpawn: 0, mode: 'play', wave: 0, kills: 0, score: 0, waveTimer: 0, toSpawn: 0, ammo: player.tank?.K.ac ? 400 : 40, tow: player.tank?.K.tow || 0, towT: 0, smoke: 2, mgHeat: 0, mgCool: false });
   for (const a of [...dmgDirs.children]) a.remove();
   $('feed').innerHTML = '';
   setScreen(null);
@@ -5679,6 +5880,7 @@ function startGame() {
   for (let i = 0; i < BATTLE[battleName].allies; i++) spawnAlly(i);
   if (player.soldier) { spawnFireteam(); cam.pitch = 0; }
   reinforceInfantry();
+  beachLanding();
   nextWave();
 }
 function pauseGame() { if (game.mode !== 'play') return; game.mode = 'paused'; mouse.fire = mouse.zoom = false; setScreen('pause'); }
@@ -5754,6 +5956,8 @@ function simStep(simDt) {
     updateSoldiers(simDt);
     updateCity(simDt);
     updateBeach(simDt);
+    updateBoats(simDt);
+    updateSmoke(simDt);
     if (game.mode !== 'title') updateSupport(simDt);
     shells.update(simDt);
     updateFlying(simDt);
