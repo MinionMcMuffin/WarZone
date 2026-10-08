@@ -279,6 +279,7 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
   <div class="tbtn" id="tZoom">ZOOM</div>
 </div>
 
+<div id="loadMap" hidden style="position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:rgba(10,12,10,0.82);color:#e8e2c8;font:600 22px/1.2 'Barlow Condensed',sans-serif;letter-spacing:0.12em">MOVING TO THE NEW FRONT…</div>
 <div id="title" class="screen" hidden>
   <div class="slab">
     <div class="eyebrow" id="eraWhere">Sector 7 · Valley of Orsk · 18:40 local</div>
@@ -286,7 +287,7 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
     <p class="brief" id="eraBrief"></p>
     <div class="pick" role="group" aria-label="Choose your era">
       <div class="label">Era</div>
-      <div class="seg erasel"><button data-era="ww2" aria-pressed="false">WW2 · 1944</button><button data-era="korea" aria-pressed="false">Korea · 1951</button><button data-era="vietnam" aria-pressed="false">Vietnam · 1968</button><button data-era="coldwar" aria-pressed="false">Cold War · 1985</button><button data-era="modern" aria-pressed="false">Modern</button></div>
+      <div class="seg erasel"><button data-era="ww2" aria-pressed="false">WW2 Italy · 1944</button><button data-era="dday" aria-pressed="false">D-Day · 1944</button><button data-era="korea" aria-pressed="false">Korea · 1951</button><button data-era="vietnam" aria-pressed="false">Vietnam · 1968</button><button data-era="coldwar" aria-pressed="false">Cold War · 1985</button><button data-era="modern" aria-pressed="false">Modern</button></div>
     </div>
     <div class="pick" role="group" aria-label="Choose your role">
       <div class="label">Role</div>
@@ -311,11 +312,12 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
       <kbd>Left click</kbd><span>Fire main gun</span>
       <kbd>Right click / Shift</kbd><span>Gunner's sight (zoom)</span>
       <kbd>Space</kbd><span>Coaxial machine gun</span>
+      <kbd>F / E</kbd><span>IFVs: fire a TOW missile · dismount your squad</span>
       <kbd>Esc</kbd><span>Pause</span>
     </div>
     <div class="pick" role="group" aria-label="Choose your tank">
       <div class="label" id="pickLabel">Choose your tank</div>
-      <div class="seg tanksel"><button data-slot="0"></button><button data-slot="1"></button><button data-slot="2"></button></div>
+      <div class="seg tanksel"><button data-slot="0"></button><button data-slot="1"></button><button data-slot="2"></button><button data-slot="3"></button></div>
       <div class="fine" id="tankBlurb"></div>
     </div>
     <div class="controls">
@@ -728,10 +730,33 @@ function withCloudShadows(mat) {
 // =====================================================================
 const WORLD = 2000, SEG = 400, CELL = WORLD / SEG, HALF = WORLD / 2;
 const ARENA = 430;
-const VILLAGE = new THREE.Vector2(70, 60);
+// Each era fights over its own ground: terrain style, town, water, where you start and where the enemy comes from
+const MAPS = {
+  ww2: { terrain: 'valley', lake: true, start: [-150, -150], front: Math.PI / 4, trees: [1000, 600], town: { x: 70, z: 60, r: 88, styles: [0, 1, 1, 2], tall: 0.5, pitched: 0.9, streets: true, block: 34 } },
+  dday: { terrain: 'beach', sea: true, start: [0, -270], front: Math.PI / 2, trees: [250, 1100], bocage: true, wrecks: [[-95, -262, 0.3], [120, -268, 2.4], [-40, 60, 1], [150, 40, 2]],
+    road: [[22, -250], [20, -170], [10, -60], [-10, 150], [-60, 330], [-160, 560], [-360, 900]],
+    allySlots: [[-20, 2], [20, 2], [-40, -3], [40, -3], [-60, 2], [60, 2], [-80, -3], [80, -3]],
+    town: { x: -10, z: 150, r: 74, styles: [0, 2, 0, 1], tall: 0.4, pitched: 1, slate: true, streets: true, block: 32 } },
+  korea: { terrain: 'mountain', lake: true, start: [-150, -150], front: Math.PI / 4, trees: [1300, 250], town: { x: 70, z: 60, r: 62, styles: [0, 1], tall: 0.15, pitched: 1, slate: true, streets: false, block: 30 } },
+  vietnam: { terrain: 'jungle', lake: true, start: [-150, -150], front: Math.PI / 4, trees: [300, 2600], bushes: 3600, town: { x: 70, z: 60, r: 72, styles: [4], tall: 0, pitched: 1, streets: false, block: 24, huts: true } },
+  coldwar: { terrain: 'rolling', lake: false, start: [-150, -150], front: Math.PI / 4, trees: [900, 700], town: { x: 70, z: 60, r: 108, styles: [0, 1, 2, 2], tall: 0.6, pitched: 0.85, slate: true, streets: true, block: 36 } },
+  modern: { terrain: 'valley', lake: true, start: [-150, -150], front: Math.PI / 4, trees: [1150, 420], town: { x: 70, z: 60, r: 160, styles: [0, 1, 2, 3, 3, 3], tall: 1.5, pitched: 0.3, streets: true, block: 40 } },
+};
+const MAP_ERA = (() => {
+  const h = /era=(\w+)/.exec(location.hash || '')?.[1]; if (h && MAPS[h]) return h;
+  try { const e = localStorage.getItem('warzone.era'); if (e && MAPS[e]) return e; } catch (e) { }
+  return 'modern';
+})();
+const MAP = MAPS[MAP_ERA];
+const VILLAGE = new THREE.Vector2(MAP.town.x, MAP.town.z), CITY_R = MAP.town.r, START = MAP.start;
+const WRECK_SPOTS = MAP.wrecks || [[-40, 40, 0.8], [150, 120, 2.2], [-210, 120, -1], [40, -170, 2.6]];
+// D-Day: the Channel to the south, a long sand beach, then bluffs cut by three draws up onto the plateau
+const SEA_Y = 0;
+const shoreZ = (x) => -300 + 14 * Math.sin(x * 0.011) + 8 * Math.sin(x * 0.027 + 1);
+const DRAWS = [-170, 20, 210];
 
 // Road: smooth spline through the valley and the village
-const roadCurve = new THREE.SplineCurve([[-760, -600], [-430, -350], [-240, -205], [-120, -90], [10, 0], [70, 60], [112, 170], [60, 300], [160, 440], [380, 720]].map(([x, z]) => new THREE.Vector2(x, z)));
+const roadCurve = new THREE.SplineCurve((MAP.road || [[-760, -600], [-430, -350], [-240, -205], [-120, -90], [10, 0], [70, 60], [112, 170], [60, 300], [160, 440], [380, 720]]).map(([x, z]) => new THREE.Vector2(x, z)));
 const roadPts = roadCurve.getSpacedPoints(520);
 const ROAD_CELL = 40, roadGrid = new Map();
 for (let i = 0; i < roadPts.length - 1; i++) {
@@ -752,13 +777,27 @@ function roadDist(x, z) {
   return best;
 }
 function naturalHeight(x, z) {
-  let h = fbm(x * 0.0021, z * 0.0021, 5) * 24;
+  const r = Math.hypot(x, z);
+  if (MAP.terrain === 'beach') {
+    const u = z - shoreZ(x); // metres inland from the waterline
+    const draw = Math.max(...DRAWS.map((dx) => smoothstep(42, 14, Math.abs(x - dx))));
+    let h = u < 0 ? -0.25 + u * 0.05 : -0.25 + Math.min(u, 95) * 0.045; // waterline sits right at u = 0
+    const steep = smoothstep(95, 148, u), gentle = smoothstep(90, 270, u);
+    h += lerp(steep, gentle, draw) * 27;
+    h += fbm(x * 0.03, z * 0.03, 3) * 2.5 * steep * (1 - steep) * 4; // broken bluff face
+    h += fbm(x * 0.004 + 9, z * 0.004, 4) * 7 * smoothstep(150, 320, u) + fbm(x * 0.02, z * 0.02, 2) * 1.2 * smoothstep(140, 200, u);
+    const m = smoothstep(ARENA * 0.95, ARENA * 1.8, r) * smoothstep(-50, 350, z);
+    return h + m * m * (110 + fbm(x * 0.0028 + 100, z * 0.0028 + 100, 6) * 90);
+  }
+  const amp = MAP.terrain === 'rolling' ? 0.6 : MAP.terrain === 'jungle' ? 1.5 : MAP.terrain === 'mountain' ? 1.2 : 1;
+  let h = fbm(x * 0.0021, z * 0.0021, 5) * 24 * amp;
+  if (MAP.terrain === 'jungle') h += fbm(x * 0.006 + 5, z * 0.006, 3) * 9; // steep little jungle ridges
   h += fbm(x * 0.009 + 40, z * 0.009 - 13, 3) * 3.2;
   const ridge = 1 - Math.abs(noise2(x * 0.0016 + 7, z * 0.0016 + 3));
   h += ridge * ridge * 9;
-  const r = Math.hypot(x, z);
-  const m = smoothstep(ARENA * 0.85, ARENA * 1.75, r);
-  h += m * m * (150 + fbm(x * 0.0028 + 100, z * 0.0028 + 100, 6) * 140);
+  const mtn = MAP.terrain === 'mountain' ? [0.6, 1.45, 210, 170] : MAP.terrain === 'rolling' ? [0.95, 1.9, 80, 70] : MAP.terrain === 'jungle' ? [0.85, 1.75, 120, 110] : [0.85, 1.75, 150, 140];
+  const m = smoothstep(ARENA * mtn[0], ARENA * mtn[1], r);
+  h += m * m * (mtn[2] + fbm(x * 0.0028 + 100, z * 0.0028 + 100, 6) * mtn[3]);
   return h;
 }
 const VILLAGE_H = naturalHeight(VILLAGE.x, VILLAGE.y);
@@ -766,22 +805,25 @@ const LAKE = { x: -150, z: 110, r: 68 };
 const LAKE_Y = naturalHeight(LAKE.x, LAKE.z) - 1.0;
 function rawHeight(x, z) {
   let h = naturalHeight(x, z);
-  h = lerp(h, VILLAGE_H + fbm(x * 0.02, z * 0.02, 2) * 0.6, smoothstep(85, 48, Math.hypot(x - VILLAGE.x, z - VILLAGE.y)));
-  const rd = roadDist(x, z);
-  h -= smoothstep(8, 3, rd) * 0.55;
-  // lake basin with an irregular shoreline
-  const ld = Math.hypot(x - LAKE.x, z - LAKE.z) + noise2(x * 0.02, z * 0.02) * 14;
-  h = lerp(h, LAKE_Y + 1.2 + fbm(x * 0.05, z * 0.05, 2) * 0.4, smoothstep(LAKE.r + 40, LAKE.r, ld));
-  h -= 5 * smoothstep(LAKE.r, LAKE.r * 0.25, ld);
-  // raise a gentle bank so low ground outside the basin never sits below the waterline
-  const bank = LAKE_Y + 0.35 + Math.max(0, ld - LAKE.r) * 0.02;
-  h = lerp(h, Math.max(h, bank), smoothstep(LAKE.r - 12, LAKE.r + 4, ld) * (1 - smoothstep(LAKE.r + 160, LAKE.r + 200, ld)));
+  if (MAP.lake) {
+    // lake basin with an irregular shoreline
+    const ld = Math.hypot(x - LAKE.x, z - LAKE.z) + noise2(x * 0.02, z * 0.02) * 14;
+    h = lerp(h, LAKE_Y + 1.2 + fbm(x * 0.05, z * 0.05, 2) * 0.4, smoothstep(LAKE.r + 40, LAKE.r, ld));
+    h -= 5 * smoothstep(LAKE.r, LAKE.r * 0.25, ld);
+    // raise a gentle bank so low ground outside the basin never sits below the waterline
+    const bank = LAKE_Y + 0.35 + Math.max(0, ld - LAKE.r) * 0.02;
+    h = lerp(h, Math.max(h, bank), smoothstep(LAKE.r - 12, LAKE.r + 4, ld) * (1 - smoothstep(LAKE.r + 160, LAKE.r + 200, ld)));
+  }
+  // the town sits on level ground (applied last so nothing lifts or sinks it)
+  const cityK = smoothstep(CITY_R + 40, CITY_R + 5, Math.hypot(x - VILLAGE.x, z - VILLAGE.y));
+  h = lerp(h, VILLAGE_H, cityK);
+  h -= smoothstep(8, 3, roadDist(x, z)) * 0.55 * (1 - cityK);
   return h;
 }
 const HEIGHTS = new Float32Array((SEG + 1) * (SEG + 1));
 // water exists only inside the lake basin (low ground elsewhere is dry land)
 const WATER_R = LAKE.r + 50;
-const waterAt = (x, z) => (Math.hypot(x - LAKE.x, z - LAKE.z) < WATER_R ? LAKE_Y : -1e9);
+const waterAt = (x, z) => (MAP.sea && z < shoreZ(x) + 60 ? SEA_Y : MAP.lake && Math.hypot(x - LAKE.x, z - LAKE.z) < WATER_R ? LAKE_Y : -1e9);
 const inWater = (x, z) => terrainHeight(x, z) < waterAt(x, z) + 0.5;
 for (let j = 0; j <= SEG; j++) for (let i = 0; i <= SEG; i++) HEIGHTS[j * (SEG + 1) + i] = rawHeight(-HALF + i * CELL, -HALF + j * CELL);
 
@@ -826,8 +868,8 @@ const TF = new Float32Array((SEG + 1) * (SEG + 1) * 11), TAO = new Float32Array(
       const r0 = Math.hypot(x, z), mtn0 = smoothstep(ARENA * 1.0, ARENA * 1.7, r0), rd0 = roadDist(x, z), F = TF, o = k * 11;
       F[o] = smoothstep(-0.3, 0.2, n2); F[o + 1] = smoothstep(-0.05, 0.5, n1) * 0.85; F[o + 2] = smoothstep(0.3, 0.55, fbm(x * 0.02 - 50, z * 0.02 + 20, 3));
       F[o + 3] = clamp(smoothstep(0.12, 0.3, slope) + mtn0 * smoothstep(0.08, 0.18, slope), 0, 1); F[o + 4] = mtn0 * 0.35; F[o + 5] = smoothstep(6.5, 3.5, rd0);
-      F[o + 6] = smoothstep(0.9, 0.2, Math.abs(rd0 - 1.6)) * smoothstep(5, 3, rd0) * 0.6; F[o + 7] = smoothstep(70, 30, Math.hypot(x - VILLAGE.x, z - VILLAGE.y)) * 0.45;
-      F[o + 8] = smoothstep(LAKE_Y + 1.4, LAKE_Y + 0.2, y) * (1 - smoothstep(LAKE.r + 30, WATER_R, Math.hypot(x - LAKE.x, z - LAKE.z))); F[o + 9] = 0.88 + n2 * 0.12; F[o + 10] = slope;
+      F[o + 6] = smoothstep(0.9, 0.2, Math.abs(rd0 - 1.6)) * smoothstep(5, 3, rd0) * 0.6; F[o + 7] = smoothstep(CITY_R + 15, CITY_R - 5, Math.hypot(x - VILLAGE.x, z - VILLAGE.y)) * 0.92;
+      F[o + 8] = MAP.sea ? smoothstep(102, 88, z - shoreZ(x)) : MAP.lake ? smoothstep(LAKE_Y + 1.4, LAKE_Y + 0.2, y) * (1 - smoothstep(LAKE.r + 30, WATER_R, Math.hypot(x - LAKE.x, z - LAKE.z))) : 0; F[o + 9] = 0.88 + n2 * 0.12; F[o + 10] = slope;
     }
     c.copy(cGrass).lerp(cGrassLush, smoothstep(-0.3, 0.2, n2)).lerp(cDry, smoothstep(-0.05, 0.5, n1) * 0.85);
     c.lerp(cDirt, smoothstep(0.3, 0.55, fbm(x * 0.02 - 50, z * 0.02 + 20, 3)));
@@ -912,7 +954,7 @@ water.material.onBeforeCompile = (sh) => {
     vec3 wn = normalize(vec3((wn1.xy + wn2.xy) * normalScale, 1.0));
     normal = normalize(tbn * wn);`);
 };
-water.position.set(LAKE.x, LAKE_Y, LAKE.z);
+water.position.set(LAKE.x, LAKE_Y, LAKE.z); water.visible = !!MAP.lake;
 water.receiveShadow = true;
 scene.add(water);
 
@@ -936,7 +978,7 @@ function queryColliders(x, z, r) {
   for (let gx = Math.floor((x - r) / COLL_CELL); gx <= Math.floor((x + r) / COLL_CELL); gx++)
     for (let gz = Math.floor((z - r) / COLL_CELL); gz <= Math.floor((z + r) / COLL_CELL); gz++) {
       const l = collGrid.get(gx + ',' + gz); if (!l) continue;
-      for (const c of l) if (!_qset.has(c)) { _qset.add(c); _qres.push(c); }
+      for (const c of l) if (!c.dead && !_qset.has(c)) { _qset.add(c); _qres.push(c); }
     }
   return _qres;
 }
@@ -1083,7 +1125,7 @@ const FOLIAGE = {};
   const barkMat = new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.95 });
   const types = [{ parts: makePineParts(), mat: makeFoliageMat(needleTex, 0.01) }, { parts: makeBroadParts(), mat: makeFoliageMat(leafTex, 0.014) }];
   FOLIAGE.pine = withCloudShadows(types[0].mat); FOLIAGE.leaf = withCloudShadows(types[1].mat); withCloudShadows(barkMat);
-  const counts = [1150, 420];
+  const counts = MAP.trees;
   const placed = [[], []];
   let tries = 0;
   while ((placed[0].length < counts[0] || placed[1].length < counts[1]) && tries++ < 40000) {
@@ -1091,10 +1133,10 @@ const FOLIAGE = {};
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (Math.abs(x) > HALF - 20 || Math.abs(z) > HALF - 20) continue;
     const forest = fbm(x * 0.006 + 3, z * 0.006 - 8, 3);
-    if (forest < -0.05 && rand() > 0.06) continue;
+    if (forest < (MAP.jungle ? -0.4 : -0.05) && rand() > 0.06) continue;
     if (roadDist(x, z) < 11) continue;
-    if (Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 72) continue;
-    if (Math.hypot(x + 150, z + 150) < 62 || inWater(x, z)) continue;
+    if (Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < CITY_R + 12) continue;
+    if (Math.hypot(x - START[0], z - START[1]) < 62 || inWater(x, z) || (MAP.sea && z < shoreZ(x) + 150)) continue;
     const n = terrainNormal(x, z); if (n.y < 0.8) continue;
     const t = rand() < 0.75 ? 0 : 1;
     if (placed[t].length >= counts[t]) continue;
@@ -1196,7 +1238,7 @@ function knockTree(tr, dirX, dirZ) {
   const lists = [[], [], []];
   for (let i = 0; i < 520; i++) {
     const r = Math.sqrt(rand()) * 900, a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (Math.abs(x) > HALF - 10 || Math.abs(z) > HALF - 10 || roadDist(x, z) < 8 || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 60 || inWater(x, z)) continue;
+    if (Math.abs(x) > HALF - 10 || Math.abs(z) > HALF - 10 || roadDist(x, z) < 8 || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < CITY_R + 10 || inWater(x, z)) continue;
     const s = Math.pow(rand(), 2.4) * 3.6 + 0.4;
     lists[i % 3].push({ x, z, s, rot: rand() * 6.28 });
   }
@@ -1257,7 +1299,7 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
   const list = [];
   while (list.length < MAXG && tries++ < MAXG * 6) {
     const r = Math.sqrt(rand()) * (ARENA + 40), a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (roadDist(x, z) < 4.5 || inWater(x, z)) continue;
+    if (roadDist(x, z) < 4.5 || inWater(x, z) || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < CITY_R || (MAP.sea && z < shoreZ(x) + 96)) continue;
     if (fbm(x * 0.02 + 30, z * 0.02, 2) < -0.25) continue;
     const nn = terrainNormal(x, z); if (nn.y < 0.86) continue;
     list.push([x, z]);
@@ -1319,12 +1361,12 @@ let grassMesh, grassMax = 0, flowerMesh, flowerMax = 0;
   }
   const bushGeo = merge(bparts); crownNormals(bushGeo, 0, 0.45, 0, 0.9);
   const bushMat = FOLIAGE.bush = withCloudShadows(makeFoliageMat(leafTex, 0.03));
-  const BMAX = 1800, bush = new THREE.InstancedMesh(bushGeo, bushMat, BMAX);
+  const BMAX = MAP.bushes || 1800, bush = new THREE.InstancedMesh(bushGeo, bushMat, BMAX);
   let bn = 0, btries = 0;
   const bcol = new THREE.Color();
   while (bn < BMAX && btries++ < BMAX * 20) {
     const r = Math.sqrt(rand()) * (ARENA + 120), a = rand() * 6.28, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    if (roadDist(x, z) < 7 || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 40 || Math.hypot(x + 150, z + 150) < 25) continue;
+    if (roadDist(x, z) < 7 || Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < CITY_R + 5 || Math.hypot(x - START[0], z - START[1]) < 25 || (MAP.sea && z < shoreZ(x) + 140)) continue;
     if (fbm(x * 0.006 + 3, z * 0.006 - 8, 3) < -0.15 && rand() > 0.25) continue;
     if (terrainNormal(x, z).y < 0.82 || inWater(x, z)) continue;
     const sc = R(0.7, 1.6);
@@ -1347,7 +1389,7 @@ const NG_R = 40, NG_MAX = 90000;
     const k = j * W1 + i, x = -HALF + i * CELL, z = -HALF + j * CELL;
     hm[k * 2] = HEIGHTS[k];
     const r = Math.hypot(x, z);
-    hm[k * 2 + 1] = r > ARENA + 120 ? 0 : smoothstep(3.5, 6, roadDist(x, z)) * (inWater(x, z) ? 0 : 1) * smoothstep(0.8, 0.88, terrainNormal(x, z).y) * smoothstep(14, 24, Math.hypot(x - VILLAGE.x, z - VILLAGE.y));
+    hm[k * 2 + 1] = r > ARENA + 120 ? 0 : smoothstep(3.5, 6, roadDist(x, z)) * (inWater(x, z) ? 0 : 1) * smoothstep(0.8, 0.88, terrainNormal(x, z).y) * smoothstep(CITY_R - 5, CITY_R + 8, Math.hypot(x - VILLAGE.x, z - VILLAGE.y)) * (MAP.sea ? smoothstep(90, 100, z - shoreZ(x)) : 1);
   }
   const hmTex = new THREE.DataTexture(hm, W1, W1, THREE.RGFormat, THREE.FloatType);
   hmTex.minFilter = hmTex.magFilter = THREE.NearestFilter; hmTex.needsUpdate = true;
@@ -1544,33 +1586,293 @@ function makeRuin(cx, cz, rot, w, d, floors, tower = false) {
   const c = addCollider({ type: 'obb', x: cx, z: cz, hw: w / 2 + 0.2, hd: d / 2 + 0.2, rot, cos: Math.cos(rot), sin: Math.sin(rot), y0: baseY, h: H + roofH + 0.3 });
   buildings.push(c);
 }
+// =====================================================================
+// The city: a street grid of plaster, brick and concrete blocks around the old village crossroads.
+// Every building can be shot down or rammed: it pancakes in a cloud of dust and leaves a rubble pile.
+// =====================================================================
+const facadeTex = (style) => canvasTex(512, (g, S) => {
+  const C = S / 2, rnd = mulberry32(900 + style * 37);
+  if (style >= 4) { // 4: woven bamboo and timber hut walls, 5: poured concrete
+    g.fillStyle = style === 4 ? '#7d6844' : '#8c8a82'; g.fillRect(0, 0, S, S);
+    if (style === 4) { for (let x = 0; x < S; x += 10) { g.fillStyle = `rgba(${rnd() < 0.5 ? '60,45,25' : '150,125,80'},0.5)`; g.fillRect(x, 0, 5, S); } for (let y = 0; y < S; y += 16) { g.fillStyle = 'rgba(50,38,22,0.35)'; g.fillRect(0, y, S, 3); } g.fillStyle = '#1a140e'; g.fillRect(S * 0.35, S * 0.25, S * 0.3, S * 0.25); }
+    else { for (let i = 0; i < 3000; i++) { g.fillStyle = `rgba(${rnd() < 0.5 ? '30,30,28' : '230,228,220'},${rnd() * 0.07})`; g.fillRect(rnd() * S, rnd() * S, 3 + rnd() * 12, 3 + rnd() * 12); } for (let y = 0; y < S; y += 64) { g.fillStyle = 'rgba(40,40,38,0.25)'; g.fillRect(0, y, S, 2); } }
+    return;
+  }
+  const base = ['#cfc3a6', '#c9a46a', '#8e4f3a', '#8f8d86'][style];
+  g.fillStyle = base; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 2600; i++) { const v = rnd(); g.fillStyle = `rgba(${v < 0.5 ? '40,34,28' : '255,250,240'},${0.03 + rnd() * 0.05})`; g.fillRect(rnd() * S, rnd() * S, 2 + rnd() * 10, 2 + rnd() * 10); }
+  if (style === 2) { // brick courses
+    g.strokeStyle = 'rgba(60,40,30,0.35)'; g.lineWidth = 1.2;
+    for (let y = 0; y < S; y += 9) { g.beginPath(); g.moveTo(0, y); g.lineTo(S, y); g.stroke(); for (let x = ((y / 9) % 2) * 9; x < S; x += 18) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 9); g.stroke(); } }
+  }
+  for (let cy = 0; cy < 2; cy++) for (let cx = 0; cx < 2; cx++) {
+    const x0 = cx * C, y0 = cy * C, kind = (cx + cy * 2 + style) % 4;
+    if (style === 3) { g.fillStyle = 'rgba(70,70,68,0.55)'; g.fillRect(x0, y0 + C - 22, C, 22); } // concrete floor band
+    else { g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(x0, y0 + C - 10, C, 6); } // string course
+    const wx = x0 + C * 0.3, ww = C * 0.4, wy = y0 + C * 0.2, wh = C * 0.52;
+    g.fillStyle = style === 3 ? '#5c5b57' : 'rgba(235,228,210,0.9)'; g.fillRect(wx - 7, wy - 7, ww + 14, wh + 14); // frame / reveal
+    const gl = g.createLinearGradient(0, wy, 0, wy + wh); gl.addColorStop(0, '#5d6b78'); gl.addColorStop(0.45, '#25303a'); gl.addColorStop(1, '#141a20');
+    g.fillStyle = kind === 3 && rnd() < 0.8 ? '#0b0b0b' : gl; g.fillRect(wx, wy, ww, wh);
+    if (kind === 3) { g.fillStyle = 'rgba(120,135,145,0.5)'; g.beginPath(); g.moveTo(wx, wy); g.lineTo(wx + ww * 0.4, wy); g.lineTo(wx, wy + wh * 0.35); g.fill(); } // shattered pane
+    else { g.fillStyle = '#e8e2d2'; g.fillRect(wx + ww / 2 - 3, wy, 6, wh); g.fillRect(wx, wy + wh * 0.38, ww, 5); } // mullions
+    g.fillStyle = 'rgba(30,26,22,0.5)'; g.fillRect(wx - 10, wy + wh + 7, ww + 20, 9); // sill
+    if ((style === 0 || style === 1) && kind !== 3) { // louvred shutters
+      g.fillStyle = style === 0 ? '#3f5a3a' : '#6a4a2a';
+      if (kind === 1) g.fillRect(wx, wy, ww, wh); else { g.fillRect(wx - 30, wy, 26, wh); g.fillRect(wx + ww + 4, wy, 26, wh); }
+    }
+    for (let k = 0; k < 3; k++) { g.fillStyle = `rgba(25,20,16,${0.08 + rnd() * 0.1})`; g.fillRect(wx + rnd() * ww, wy + wh + 14, 3 + rnd() * 5, 30 + rnd() * 70); } // rain streaks
+  }
+  for (let k = 0; k < 3; k++) { const x = rnd() * S, y = rnd() * S, r = 20 + rnd() * 40, gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(15,12,10,0.45)'); gr.addColorStop(1, 'rgba(15,12,10,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } // soot and shell scars
+});
+const FACADES = [0, 1, 2, 3, 4, 5].map((st) => withCloudShadows(new THREE.MeshStandardMaterial({ map: facadeTex(st), vertexColors: true, roughness: 0.88, normalMap: detailNormal, normalScale: new THREE.Vector2(0.35, 0.35) })));
+const asphaltTex = canvasTex(256, (g, S) => {
+  const rnd = mulberry32(55);
+  g.fillStyle = '#9a958c'; g.fillRect(0, 0, S, S); // pavement either side
+  g.fillStyle = '#3b3b3a'; g.fillRect(0, S * 0.2, S, S * 0.6);
+  for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(${rnd() < 0.5 ? '0,0,0' : '255,255,255'},${rnd() * 0.08})`; g.fillRect(rnd() * S, rnd() * S, 2, 2); }
+  g.fillStyle = '#6e6a63'; g.fillRect(0, S * 0.2 - 4, S, 4); g.fillRect(0, S * 0.8, S, 4); // kerbs
+  g.fillStyle = 'rgba(225,220,200,0.75)'; for (let x = 0; x < S; x += 64) g.fillRect(x, S * 0.5 - 2, 34, 4); // centre dashes
+  for (let i = 0; i < 6; i++) { g.fillStyle = 'rgba(20,20,20,0.25)'; g.beginPath(); g.ellipse(rnd() * S, S * (0.25 + rnd() * 0.5), 10 + rnd() * 20, 6 + rnd() * 10, rnd() * 3, 0, 6.3); g.fill(); } // patches
+});
+const asphaltMat = withCloudShadows(new THREE.MeshStandardMaterial({ map: asphaltTex, roughness: 0.92, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+const rubbleMat = withCloudShadows(new THREE.MeshStandardMaterial({ map: plasterTex, roughness: 0.95, normalMap: detailNormal, normalScale: new THREE.Vector2(0.8, 0.8), color: 0xb0aaa0 }));
+
+// facade UVs: windows repeat every 3 m across and every floor up; roofs, parapets and slabs get plain plaster
+function facadeUV(g, plain) {
+  g = g.index ? g.toNonIndexed() : g;
+  const p = g.attributes.position, n = g.attributes.normal, uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    const nx = n.getX(i), ny = n.getY(i), nz = n.getZ(i);
+    if (plain || Math.abs(ny) > 0.5) { uv[i * 2] = 0.03 + (p.getX(i) + p.getZ(i)) * 0.004; uv[i * 2 + 1] = 0.97 - p.getY(i) * 0.002; continue; }
+    uv[i * 2] = (Math.abs(nx) > Math.abs(nz) ? p.getZ(i) * Math.sign(nx) : -p.getX(i) * Math.sign(nz)) / 6;
+    uv[i * 2 + 1] = p.getY(i) / 6.2;
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return g;
+}
+const cityBuildings = [], collapsing = [];
+const thatchMat = withCloudShadows(new THREE.MeshStandardMaterial({ map: canvasTex(256, (g, S) => { const rnd = mulberry32(77); g.fillStyle = '#8a7444'; g.fillRect(0, 0, S, S); for (let i = 0; i < 2500; i++) { g.strokeStyle = `rgba(${rnd() < 0.5 ? '70,55,30' : '190,165,110'},0.5)`; g.lineWidth = 1 + rnd() * 2; const x = rnd() * S, y = rnd() * S; g.beginPath(); g.moveTo(x, y); g.lineTo(x + rnd() * 4 - 2, y + 12 + rnd() * 20); g.stroke(); } }), roughness: 1 }));
+const slateMat = roofMat.clone(); slateMat.color.set(0x7d8494);
+function makeBuilding(cx, cz, rot, w, d, floors, style) {
+  const H = style === 5 ? 2.6 : style === 4 ? 2.5 : floors * 3.1, walls = [], plain = [], roof = [];
+  walls.push(new THREE.BoxGeometry(w, H, d).translate(0, H / 2, 0));
+  plain.push(new THREE.BoxGeometry(w + 0.35, 0.45, d + 0.35).translate(0, H + 0.15, 0)); // cornice / parapet
+  plain.push(new THREE.BoxGeometry(w + 0.12, 0.9, d + 0.12).translate(0, 0.35, 0)); // plinth
+  if (style === 5) plain.push(paintGeo(new THREE.BoxGeometry(w * 0.7, 0.35, 0.3).translate(0, 1.55, d / 2 + 0.05), (c) => c.setRGB(0.05, 0.05, 0.05))); // firing slit
+  if (style === 3) for (let f = 1; f < floors; f++) plain.push(new THREE.BoxGeometry(w + 0.5, 0.18, d + 0.5).translate(0, f * 3.1, 0)); // slab edges
+  const door = new THREE.BoxGeometry(1.5, 2.4, 0.2).translate(R(-w / 4, w / 4), 1.2, style === 5 ? -d / 2 - 0.05 : d / 2 + 0.05);
+  plain.push(paintGeo(door, (c) => c.setRGB(0.25, 0.2, 0.16)));
+  const pitched = style === 4 || (style <= 2 && floors <= 5 && rand() < (MAP.town.pitched ?? 0.7));
+  let roofH = 0;
+  if (pitched) { roofH = Math.min(w, d) * (style === 4 ? 0.6 : 0.32); roof.push(new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1).rotateY(Math.PI / 4).scale(w + 0.7, roofH, d + 0.7).translate(0, H + 0.4 + roofH / 2, 0)); }
+  else if (style < 4) for (let k = 0; k < 2; k++) plain.push(new THREE.BoxGeometry(R(1.5, 3), R(1.2, 2.4), R(1.5, 3)).translate(R(-w / 3, w / 3), H + 0.9, R(-d / 3, d / 3))); // stair housings, tanks
+  const white = new THREE.Color(1, 1, 1);
+  const geo = mergeGeometries([facadeUV(paintGeo(merge(walls), (c) => c.copy(white)), false), facadeUV(merge(plain.map((g) => g.attributes.color ? g : paintGeo(g, (c) => c.copy(white)))), true)]);
+  const grp = new THREE.Group();
+  const mesh = new THREE.Mesh(geo, FACADES[style]); mesh.castShadow = mesh.receiveShadow = true; grp.add(mesh);
+  if (roof.length) { const rm = new THREE.Mesh(merge(roof), style === 4 ? thatchMat : MAP.town.slate ? slateMat : roofMat); rm.castShadow = rm.receiveShadow = true; grp.add(rm); }
+  grp.position.set(cx, VILLAGE_H - 0.05, cz); grp.rotation.y = rot;
+  scene.add(grp);
+  const b = { grp, x: cx, z: cz, rot, w, d, H, floors, style, hp: 50 + floors * 22, alive: true };
+  b.c = addCollider({ type: 'obb', x: cx, z: cz, hw: w / 2 + 0.2, hd: d / 2 + 0.2, rot, cos: Math.cos(rot), sin: Math.sin(rot), y0: VILLAGE_H - 0.3, h: H + roofH + 0.6, building: b });
+  buildings.push(b.c); cityBuildings.push(b);
+  return b;
+}
+function damageBuilding(b, amount, p, owner) {
+  if (!b.alive) return;
+  b.hp -= amount;
+  if (b.hp <= 0) collapseBuilding(b, owner);
+  else if (amount > 10) for (let i = 0; i < 6; i++) smokePool.emit({ x: p.x, y: p.y, z: p.z, vx: rr(-2, 2), vy: rr(-1, 1), vz: rr(-2, 2), life: rr(1.5, 3), s0: 1, s1: 4, c0: [0.62, 0.58, 0.52, 0.6], c1: [0.7, 0.67, 0.62, 0], drag: 1.5, grav: 0.4 });
+}
+function collapseBuilding(b, by) {
+  if (!b.alive) return;
+  b.alive = false; b.c.dead = true;
+  const base = VILLAGE_H, cx = b.x, cz = b.z;
+  // the rubble pile it leaves behind: chunks heaped in the footprint, a few wall stubs still standing
+  const parts = [], cs = Math.cos(b.rot), sn = Math.sin(b.rot);
+  const n = Math.round(30 + b.w * b.d * 0.25);
+  for (let i = 0; i < n; i++) {
+    const u = rr(-0.55, 0.55), v = rr(-0.55, 0.55), hh = (1 - Math.max(Math.abs(u), Math.abs(v)) * 1.6) * Math.min(3.2, 0.8 + b.floors * 0.45);
+    const g = rand() < 0.5 ? new THREE.DodecahedronGeometry(rr(0.5, 1.3), 0) : new THREE.BoxGeometry(rr(0.6, 2.4), rr(0.2, 0.6), rr(0.6, 2.4));
+    g.rotateX(rr(0, 3)).rotateY(rr(0, 3)).translate(u * b.w, Math.max(0.1, hh * rr(0.3, 1)), v * b.d); parts.push(g);
+  }
+  for (let k = 0; k < 3; k++) { const sx = rand() < 0.5 ? -1 : 1, along = rand() < 0.5; parts.push(new THREE.BoxGeometry(along ? rr(1.5, b.w * 0.5) : 0.4, rr(1, 4), along ? 0.4 : rr(1.5, b.d * 0.5)).translate(along ? rr(-b.w / 4, b.w / 4) : sx * b.w / 2, 1, along ? sx * b.d / 2 : rr(-b.d / 4, b.d / 4))); }
+  const rg = merge(parts); rg.computeVertexNormals(); worldUV(rg, 0.4);
+  const rubble = new THREE.Mesh(rg, rubbleMat); rubble.castShadow = rubble.receiveShadow = true;
+  rubble.position.set(cx, base - 0.2, cz); rubble.rotation.y = b.rot; scene.add(rubble);
+  collapsing.push({ b, t: 0 });
+  // dust, debris, sound, shake
+  for (let i = 0; i < 70; i++) {
+    const u = rr(-0.6, 0.6) * b.w, v = rr(-0.6, 0.6) * b.d, x = cx + u * cs + v * sn, z = cz - u * sn + v * cs;
+    smokePool.emit({ x, y: base + rr(0, b.H * 0.8), z, vx: rr(-4, 4), vy: rr(0, 3), vz: rr(-4, 4), life: rr(5, 10), s0: rr(3, 6), s1: rr(12, 22), c0: [0.6, 0.56, 0.5, 0.85], c1: [0.68, 0.65, 0.6, 0], drag: 0.8, grav: -0.1 });
+  }
+  const top = new THREE.Vector3(cx, base + b.H * 0.6, cz);
+  debris.burst(top, 30, true); sfx.explosion(top, 1.6); sfx.crack(cx, cz);
+  const pe = playerEnt(); if (pe) addShake(clamp(1.1 - pe.pos.distanceTo(top) / 90, 0, 0.9));
+  // anyone inside or right against the walls is caught in it
+  for (const sd of soldiers) {
+    if (!sd.alive) continue;
+    const ox = sd.pos.x - cx, oz = sd.pos.z - cz, lx = ox * cs - oz * sn, lz = ox * sn + oz * cs;
+    if (Math.abs(lx) < b.w / 2 + 2 && Math.abs(lz) < b.d / 2 + 2) { sd.damage(sd.team === 'blue' ? 40 : 120, by, top); if (!sd.alive && by?.isPlayer && sd.team === 'red') onKillSoldier(sd); }
+  }
+  if (by?.isPlayer) { game.score += 10 * b.floors; feed(`Building flattened · +${10 * b.floors}`, false); }
+}
+function updateCity(dt) {
+  for (let i = collapsing.length - 1; i >= 0; i--) {
+    const c = collapsing[i]; c.t += dt;
+    const k = c.t * c.t * 1.6; // pancakes straight down, leaning a little as it goes
+    c.b.grp.position.y = VILLAGE_H - 0.05 - k * c.b.H * 0.55;
+    c.b.grp.rotation.z = k * 0.06; c.b.grp.rotation.x = k * 0.04;
+    if (c.t < 1.2 && Math.random() < dt * 30) smokePool.emit({ x: c.b.x + rr(-c.b.w, c.b.w) * 0.5, y: VILLAGE_H + rr(0, 4), z: c.b.z + rr(-c.b.d, c.b.d) * 0.5, vx: rr(-6, 6), vy: rr(0, 2), vz: rr(-6, 6), life: rr(4, 8), s0: 4, s1: 16, c0: [0.62, 0.58, 0.52, 0.8], c1: [0.7, 0.67, 0.62, 0], drag: 0.9 });
+    if (c.b.grp.position.y < VILLAGE_H - c.b.H - 1) { scene.remove(c.b.grp); collapsing.splice(i, 1); }
+  }
+}
 {
-  const spots = [];
-  makeRuin(VILLAGE.x - 24, VILLAGE.y + 12, 0.35, 5.5, 5.5, 4, true); spots.push([VILLAGE.x - 24, VILLAGE.y + 12, 6]);
-  let tries = 0;
-  while (spots.length < 11 && tries++ < 400) {
-    const a = rand() * 6.28, r = R(14, 58), x = VILLAGE.x + Math.cos(a) * r, z = VILLAGE.y + Math.sin(a) * r;
-    const w = R(7, 12), d = R(6, 9), rad = Math.hypot(w, d) / 2;
-    if (roadDist(x, z) < rad + 5) continue;
-    if (spots.some(([sx, sz, sr]) => Math.hypot(sx - x, sz - z) < sr + rad + 4)) continue;
-    // orient parallel to road
-    let best = 0, bd = 1e9; roadPts.forEach((p, i) => { const dd = Math.hypot(p.x - x, p.y - z); if (dd < bd) { bd = dd; best = i; } });
-    const tan = roadPts[Math.min(best + 1, roadPts.length - 1)].clone().sub(roadPts[Math.max(best - 1, 0)]);
-    makeRuin(x, z, -Math.atan2(tan.y, tan.x) + (rand() < 0.3 ? Math.PI / 2 : 0), w, d, rand() < 0.45 ? 2 : 1);
-    spots.push([x, z, rad]);
+  // grid aligned with the road through the old crossroads
+  let bi = 0, bd = 1e9; roadPts.forEach((p, i) => { const dd = Math.hypot(p.x - VILLAGE.x, p.y - VILLAGE.y); if (dd < bd) { bd = dd; bi = i; } });
+  const tan = roadPts[Math.min(bi + 1, roadPts.length - 1)].clone().sub(roadPts[Math.max(bi - 1, 0)]).normalize();
+  const rot = -Math.atan2(tan.y, tan.x), ux = Math.cos(rot), uz = -Math.sin(rot), vx = Math.sin(rot), vz = Math.cos(rot);
+  const T = MAP.town, BLOCK = T.block, ST = T.streets ? 13 : 7, N = Math.ceil(CITY_R / BLOCK) + 1;
+  const toW = (a, b) => [VILLAGE.x + ux * a + vx * b, VILLAGE.y + uz * a + vz * b];
+  // streets: one strip per grid line, clipped to the city circle
+  const strips = [];
+  for (let i = -N; i <= N; i++) for (const axis of [0, 1]) {
+    const off = i * BLOCK, L = Math.sqrt(Math.max(0, CITY_R * CITY_R - off * off)); if (L < 20) continue;
+    const g = new THREE.PlaneGeometry(2 * L, ST).rotateX(-Math.PI / 2);
+    const uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (2 * L) / 14, uv.getY(k));
+    if (axis) g.rotateY(Math.PI / 2);
+    g.translate(axis ? off : 0, VILLAGE_H + 0.06 + axis * 0.03, axis ? 0 : off);
+    strips.push(g);
+  }
+  if (T.streets && strips.length) { const sg = merge(strips); sg.rotateY(rot); sg.translate(VILLAGE.x, 0, VILLAGE.y); const streets = new THREE.Mesh(sg, asphaltMat); streets.receiveShadow = true; scene.add(streets); }
+  // buildings on the lots between the streets
+  for (let i = -N; i < N; i++) for (let j = -N; j < N; j++) {
+    const a0 = i * BLOCK + ST / 2, b0 = j * BLOCK + ST / 2, inner = BLOCK - ST;
+    const split = rand() < 0.25 ? 1 : 2, lot = inner / split;
+    for (let p = 0; p < split; p++) for (let q = 0; q < split; q++) {
+      const a = a0 + (p + 0.5) * lot, b = b0 + (q + 0.5) * lot, r = Math.hypot(a, b);
+      if (r > CITY_R - lot * 0.6 || rand() < 0.1) continue; // edge of town, the odd open lot
+      let [x, z] = toW(a, b), w = lot - R(1.2, 2.6), d = lot - R(1.2, 2.6);
+      if (T.huts) { w = R(4.5, 6.5); d = R(4, 5.5); x += R(-2, 2); z += R(-2, 2); }
+      const rad = Math.hypot(w, d) / 2;
+      if (roadDist(x, z) < rad + 10 || inWater(x, z) || WRECK_SPOTS.some(([wx, wz]) => Math.hypot(wx - x, wz - z) < rad + 9)) continue;
+      const floors = T.huts ? 1 : Math.max(T.tall < 0.3 ? 1 : 2, Math.round(1.5 + rand() * (1 + 6 * T.tall * (1 - r / CITY_R)) * (split === 1 ? 1.2 : 1)));
+      makeBuilding(x, z, T.huts ? rand() * 6.28 : rot + (rand() < 0.5 ? 0 : Math.PI), w, d, floors, T.styles[Math.floor(rand() * T.styles.length)]);
+    }
   }
 }
 
 // Props: sandbags, anti-tank hedgehogs, telegraph poles with sagging wires
+// =====================================================================
+// D-Day: the Channel, surf, beach obstacles, bunkers on the bluffs, landing craft and the fleet offshore
+// =====================================================================
+const beach = { bunkers: [], ships: [], shellT: 4 };
+if (MAP.sea) {
+  water.visible = false;
+  const seaMat = water.material.clone(); seaMat.onBeforeCompile = water.material.onBeforeCompile;
+  seaMat.color.set(0x35606a); seaMat.opacity = 0.93; seaMat.normalScale.set(0.45, 0.45);
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(5000, 2400).rotateX(-Math.PI / 2), seaMat);
+  sea.position.set(0, SEA_Y, -300 - 1200 + 45); sea.receiveShadow = true; scene.add(sea);
+  beach.seaMat = seaMat;
+  // breaking surf: a frothy band that follows the waterline and rolls in and out
+  const foamTex = canvasTex(256, (g, S) => { const rnd = mulberry32(31); g.clearRect(0, 0, S, S); for (let i = 0; i < 1600; i++) { const y = rnd() * S; g.fillStyle = `rgba(255,255,255,${(0.2 + rnd() * 0.6) * (1 - Math.abs(y / S - 0.5) * 1.6)})`; g.beginPath(); g.ellipse(rnd() * S, y, 3 + rnd() * 14, 1.5 + rnd() * 4, 0, 0, 6.3); g.fill(); } });
+  const fpos = [], fuv = [], N = 400;
+  for (let i = 0; i <= N; i++) { const x = -1200 + i * 2400 / N, z = shoreZ(x); fpos.push(x, SEA_Y + 0.08, z - 7, x, SEA_Y + 0.08, z + 5); fuv.push(i * 0.25, 0, i * 0.25, 1); }
+  const fidx = []; for (let i = 0; i < N; i++) { const a = i * 2; fidx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fpos, 3)); fg.setAttribute('uv', new THREE.Float32BufferAttribute(fuv, 2)); fg.setIndex(fidx); fg.computeVertexNormals();
+  beach.foam = new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ map: foamTex, transparent: true, depthWrite: false, opacity: 0.85, color: 0xdfe6e6 }));
+  scene.add(beach.foam);
+  // obstacle belt: Czech hedgehogs, wooden stakes and Belgian gates in loose staggered rows
+  const steel = [], wood = [];
+  const hedgehog = (x, z, s) => { const y = terrainHeight(x, z), rot = rand() * 3; for (let i = 0; i < 3; i++) { const b = new THREE.BoxGeometry(0.2, 0.2, 2.4 * s); b.rotateX([0.7, -0.7, 0][i]); b.rotateY([0, 0, Math.PI / 2][i] + rot); if (i === 2) b.rotateZ(0.7); b.translate(x, y + 0.75 * s, z); steel.push(b); } addCollider({ type: 'circle', x, z, r: 0.9, h: 1.5, prop: true }); };
+  for (let row = 0; row < 4; row++) for (let x = -520; x < 520; x += R(9, 16)) {
+    const xx = x + (row % 2) * 6, u = 22 + row * 14 + R(-3, 3), z = shoreZ(xx) + u;
+    if (Math.abs(xx - START[0]) < 12 && row < 2) continue;
+    const k = rand();
+    if (k < 0.55) hedgehog(xx, z, R(0.9, 1.15));
+    else if (k < 0.85) { const y = terrainHeight(xx, z); wood.push(new THREE.CylinderGeometry(0.12, 0.16, 3.2, 6).translate(0, 1.6, 0).rotateX(-0.55).translate(xx, y - 0.3, z)); addCollider({ type: 'circle', x: xx, z, r: 0.4, h: 2.5, prop: true }); }
+    else { const y = terrainHeight(xx, z); for (const dx of [-1.4, 1.4]) steel.push(new THREE.BoxGeometry(0.18, 2.6, 0.18).translate(xx + dx, y + 1.3, z)); steel.push(new THREE.BoxGeometry(3, 0.18, 0.18).translate(xx, y + 2.5, z), new THREE.BoxGeometry(3.2, 0.14, 0.14).rotateZ(0.7).translate(xx, y + 1.3, z)); addCollider({ type: 'circle', x: xx, z, r: 1.6, h: 2.6, prop: true }); }
+  }
+  const smat = new THREE.MeshStandardMaterial({ color: 0x4a3f36, roughness: 0.7, metalness: 0.6 });
+  const hm = new THREE.Mesh(merge(steel), smat); hm.castShadow = hm.receiveShadow = true; scene.add(hm);
+  if (wood.length) { const wm = new THREE.Mesh(merge(wood), woodMat); wm.castShadow = true; scene.add(wm); }
+  // concrete bunkers along the bluff crest, guarding the draws and the beach; each one destructible
+  for (let x = -330; x <= 330; x += R(70, 95)) {
+    const u = 150 + R(-4, 6), z = shoreZ(x) + u;
+    const b = makeBuilding(x, z, Math.PI, 7.5, 5.5, 1, 5);
+    b.y = terrainHeight(x, z); b.grp.position.y = b.y - 0.6; b.c.y0 = b.y - 0.6; b.hp = 220;
+    beach.bunkers.push(b);
+  }
+  // Higgins boats beached at the waterline, ramps down
+  const lcvp = [], lc = new THREE.Color(0x56603e), dk = new THREE.Color(0x2c2f26);
+  for (let x = -260; x <= 260; x += R(40, 70)) {
+    if (Math.abs(x - START[0]) < 14) continue;
+    const z = shoreZ(x) - 3, rot = R(-0.25, 0.25), parts = [];
+    parts.push(paintGeo(new THREE.BoxGeometry(3.2, 1.6, 10.5).translate(0, 0.5, 0), (c) => c.copy(lc)));
+    parts.push(paintGeo(new THREE.BoxGeometry(2.6, 0.1, 9.5).translate(0, 1.0, 0), (c) => c.copy(dk)));
+    parts.push(paintGeo(new THREE.BoxGeometry(3.0, 0.15, 2.6).rotateX(-0.55).translate(0, 0.1, 6.2), (c) => c.copy(lc))); // lowered ramp
+    parts.push(paintGeo(new THREE.BoxGeometry(1.2, 1.2, 1.2).translate(0, 1.5, -4.4), (c) => c.copy(lc)));
+    const g = merge(parts); g.rotateY(rot); g.translate(x, SEA_Y - 0.4, z);
+    lcvp.push(g);
+  }
+  const lm = new THREE.Mesh(merge(lcvp), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.3 })); lm.castShadow = lm.receiveShadow = true; scene.add(lm);
+  // the fleet offshore: destroyers and a battleship firing over the beach
+  const shipMat = new THREE.MeshStandardMaterial({ color: 0x5d646a, roughness: 0.65, metalness: 0.3 });
+  for (const [sx, sz, L] of [[-700, -1100, 115], [-180, -1350, 190], [420, -1000, 110], [900, -1500, 120], [150, -1800, 180]]) {
+    const W = L * 0.11, parts = [];
+    const hull = new THREE.ExtrudeGeometry(new THREE.Shape([[-W / 2, -L / 2], [W / 2, -L / 2], [W / 2, L * 0.3], [0, L / 2], [-W / 2, L * 0.3]].map(([a, b]) => new THREE.Vector2(a, b))), { depth: W * 0.7, bevelEnabled: false });
+    hull.rotateX(Math.PI / 2); hull.translate(0, W * 0.5, 0); parts.push(hull);
+    parts.push(new THREE.BoxGeometry(W * 0.6, W * 0.5, L * 0.18).translate(0, W * 0.75, L * 0.05), new THREE.BoxGeometry(W * 0.35, W * 0.5, L * 0.08).translate(0, W * 1.2, L * 0.07));
+    parts.push(new THREE.CylinderGeometry(W * 0.12, W * 0.14, W * 0.7, 10).translate(0, W * 1.1, -L * 0.08));
+    const guns = [];
+    for (const gz of [L * 0.3, L * 0.18, -L * 0.3]) { parts.push(new THREE.CylinderGeometry(W * 0.18, W * 0.2, W * 0.2, 12).translate(0, W * 0.6, gz)); guns.push(gz); }
+    const g = merge(parts), rot = R(1.3, 1.8);
+    const m = new THREE.Mesh(g, shipMat); m.position.set(sx, SEA_Y - 1, sz); m.rotation.y = rot; scene.add(m);
+    beach.ships.push({ m, guns, W, rot });
+  }
+}
+// German MG crews dug in beside the bunkers; they come back for each wave while their bunker stands
+function manBunkers() {
+  for (const b of beach.bunkers) {
+    if (!b.alive) continue;
+    if (soldiers.some((s) => s.bunker === b && s.alive)) continue;
+    for (const sx of [-1, 1]) {
+      const x = b.x + sx * 6, z = b.z + 1.5;
+      const s = new Soldier('red', x, z, { role: 'rifle', heading: Math.PI });
+      s.ai = { foe: null, foeT: rr(0, 1), los: false, losT: 0 }; s.bunker = b; s.mg42 = true; s.magSize = 75; s.mag = 75;
+    }
+  }
+}
+function updateBeach(dt) {
+  if (!MAP.sea) return;
+  const t = game.time;
+  if (beach.seaMat) beach.foam.material.map.offset.set(t * 0.01, Math.sin(t * 0.5) * 0.12), beach.foam.position.z = Math.sin(t * 0.5) * 1.6;
+  if (game.mode !== 'play') return;
+  // German mortars and 88s walking shells across the sand
+  beach.shellT -= dt;
+  const pe = playerEnt();
+  if (beach.shellT <= 0 && pe && beach.bunkers.some((b) => b.alive)) {
+    beach.shellT = rr(2.5, 6) / Math.max(0.5, beach.bunkers.filter((b) => b.alive).length / beach.bunkers.length);
+    const x = pe.pos.x + rr(-160, 160), z = shoreZ(x) + rr(4, 90);
+    if (Math.hypot(x - pe.pos.x, z - pe.pos.z) > 28) {
+      const p = new THREE.Vector3(x, terrainHeight(x, z) + 0.3, z);
+      particles.explosion(p, 1, true); decals.place(x, z, 3); sfx.explosion(p, 1); nearMissShake(p);
+      splashDamage(p, 6, 90, { team: 'red' });
+      for (const sd of soldiers) if (sd.alive && sd.team === 'blue' && sd.pos.distanceTo(p) < 20) sd.supp = Math.min(2, sd.supp + 0.8);
+    }
+  }
+  // the fleet's guns flash as friendly barrages go in
+  if (support.barrage && Math.random() < dt * 3) { const sh = beach.ships[Math.floor(Math.random() * beach.ships.length)]; if (sh) { const gz = sh.guns[Math.floor(Math.random() * sh.guns.length)], p = new THREE.Vector3(Math.sin(sh.rot) * gz, sh.W * 0.7, Math.cos(sh.rot) * gz).add(sh.m.position); firePool.emit({ x: p.x, y: p.y, z: p.z, life: 0.25, s0: 12, s1: 26, c0: [16, 9, 3, 1], c1: [4, 1, 0.2, 0] }); smokePool.emit({ x: p.x, y: p.y, z: p.z, vy: 2, life: 6, s0: 10, s1: 40, c0: [0.7, 0.68, 0.66, 0.6], c1: [0.75, 0.73, 0.7, 0] }); } }
+}
 {
   const sandMat = new THREE.MeshStandardMaterial({ color: 0x9a8a62, roughness: 1, normalMap: detailNormal, normalScale: new THREE.Vector2(1.2, 1.2) });
   const steelMat = new THREE.MeshStandardMaterial({ color: 0x4a3f36, roughness: 0.7, metalness: 0.6 });
   const bags = [], hedges = [];
   const bag = () => { const g = new THREE.CapsuleGeometry(0.22, 0.45, 3, 8); g.rotateZ(Math.PI / 2); g.scale(1, 0.62, 0.95); return g; };
-  for (let k = 0; k < 9; k++) {
+  for (let k = 0, placed = 0; k < 60 && placed < 9; k++) {
     const a0 = rand() * 6.28, r = R(22, 120), cx = VILLAGE.x + Math.cos(a0) * r, cz = VILLAGE.y + Math.sin(a0) * r;
-    if (roadDist(cx, cz) < 7) continue;
-    const arcR = R(3, 5), face = rand() * 6.28;
+    if (roadDist(cx, cz) < 7 || queryColliders(cx, cz, 8).some((c) => c.type === 'obb')) continue;
+    const arcR = R(3, 5), face = rand() * 6.28; placed++;
     for (let i = 0; i < 9; i++) for (let row = 0; row < 3; row++) {
       const a = face + (i - 4 + (row % 2) * 0.5) * 0.17, x = cx + Math.cos(a) * arcR, z = cz + Math.sin(a) * arcR;
       const g = bag(); g.rotateY(-a + Math.PI / 2); g.translate(x, terrainHeight(x, z) + 0.12 + row * 0.27, z); bags.push(g);
@@ -1579,7 +1881,7 @@ function makeRuin(cx, cz, rot, w, d, floors, tower = false) {
   }
   for (let k = 0; k < 26; k++) {
     const t = R(0.25, 0.7), p = roadCurve.getPoint(t), x = p.x + R(-28, 28), z = p.y + R(-28, 28);
-    if (roadDist(x, z) < 5) continue;
+    if (roadDist(x, z) < 5 || queryColliders(x, z, 4).some((c) => c.type === 'obb')) continue;
     const y = terrainHeight(x, z), rot = rand() * 3;
     for (let i = 0; i < 3; i++) {
       const beam = new THREE.BoxGeometry(0.16, 0.16, 2.2);
@@ -1589,8 +1891,8 @@ function makeRuin(cx, cz, rot, w, d, floors, tower = false) {
     }
     addCollider({ type: 'circle', x, z, r: 1.0, h: 1.4, prop: true });
   }
-  const bm = new THREE.Mesh(merge(bags), sandMat); bm.castShadow = bm.receiveShadow = true; scene.add(bm);
-  const hm = new THREE.Mesh(merge(hedges), steelMat); hm.castShadow = true; scene.add(hm);
+  if (bags.length) { const bm = new THREE.Mesh(merge(bags), sandMat); bm.castShadow = bm.receiveShadow = true; scene.add(bm); }
+  if (hedges.length) { const hm = new THREE.Mesh(merge(hedges), steelMat); hm.castShadow = true; scene.add(hm); }
 
   // Telegraph poles along the road
   const poles = [], wirePts = [], tops = [];
@@ -2226,9 +2528,12 @@ function buildDesign(o) {
     boxy: [[-hl, 0.38], [hl - 0.25, 0.38], [hl + 0.15, 0.78], [hl + 0.2, H], [-hl + 0.05, H], [-hl - 0.08, H - 0.15]], // Tiger: vertical slab front
     steep: [[-hl, 0.38], [hl - 0.5, 0.38], [hl + 0.3, 0.62], [hl - 1.75, H], [-hl + 0.1, H], [-hl - 0.2, H - 0.45]], // Panther, T-34: long 60° glacis
     sherman: [[-hl, 0.38], [hl - 0.55, 0.38], [hl + 0.2, 0.62], [hl + 0.28, 0.9], [hl - 1.35, H], [-hl + 0.1, H], [-hl - 0.15, H - 0.35]], // rounded transmission nose
+    ifv: [[-hl, 0.38], [hl - 0.6, 0.38], [hl + 0.25, 0.92], [hl - 1.5, H], [-hl + 0.05, H], [-hl, H - 0.12]], // Bradley/Warrior: tall box, long upper glacis, flat rear ramp
+    bmp: [[-hl, 0.38], [hl - 0.2, 0.38], [hl + 0.55, 0.72], [hl - 1.7, H * 0.94], [hl - 2.3, H], [-hl + 0.1, H], [-hl, H - 0.18]], // BMP: sharp ribbed wedge nose
+    m113: [[-hl, 0.38], [hl - 0.35, 0.38], [hl + 0.12, 1.0], [hl - 0.5, H], [-hl + 0.02, H], [-hl, 0.5]], // M113 aluminium box
   };
   const prof = PROFILES[o.hull || 'std'];
-  const gi = o.hull === 'sherman' ? 3 : 2, gz0 = prof[gi][0] - 0.1, gy0 = prof[gi][1] + 0.05, gz1 = prof[gi + 1][0] + 0.1, gy1 = prof[gi + 1][1] - 0.02;
+  const gi = o.hull === 'sherman' || o.hull === 'bmp' ? (o.hull === 'bmp' ? 2 : 3) : 2, gz0 = prof[gi][0] - 0.1, gy0 = prof[gi][1] + 0.05, gz1 = prof[gi + 1][0] + 0.1, gy1 = prof[gi + 1][1] - 0.02;
   const gAng = Math.atan2(gy1 - gy0, gz0 - gz1);
   const hull = new THREE.ExtrudeGeometry(new THREE.Shape(V(prof)), { depth: W, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 2 });
   hull.rotateY(-Math.PI / 2); hull.translate(W / 2, 0, 0);
@@ -2252,6 +2557,9 @@ function buildDesign(o) {
       hullDark.push(T(g, (c - 1.5) * 0.3, lerp(gy0, gy1, 0.3 + r * 0.32) + 0.05, lerp(gz0, gz1, 0.3 + r * 0.32)));
     }
   }
+  if (o.ribs) for (let r = 0; r < 4; r++) { const b = new THREE.BoxGeometry(W * 0.75, 0.05, 0.08); b.rotateX(gAng); hullDark.push(T(b, 0, lerp(gy0, gy1, 0.15 + r * 0.2) + 0.04, lerp(gz0, gz1, 0.15 + r * 0.2))); } // trim-vane ribs
+  if (o.ramp) { hullDark.push(T(RB(W * 0.6, H - 0.7, 0.08, 0.03), 0, (H + 0.5) / 2, -hl - 0.03)); for (const sx of [-1, 1]) hullDark.push(T(new THREE.CylinderGeometry(0.05, 0.05, 0.25, 8).rotateZ(Math.PI / 2), sx * W * 0.28, 0.55, -hl - 0.06)); } // rear troop ramp and hinges
+  if (o.bolts) for (const sx of [-1, 1]) for (let i = 0; i < 9; i++) for (const y of [fy - 0.1, fy - 0.5]) hullDark.push(T(new THREE.SphereGeometry(0.035, 6, 4), sx * 2.02, y, -Lh * 0.42 + i * Lh * 0.105)); // appliqué armour bolts
   if (o.drums) for (const x of [-0.62, 0.62]) hullCamo.push(T(new THREE.CylinderGeometry(0.3, 0.3, 1.15, 14).rotateZ(Math.PI / 2), x, H + 0.28, -hl + 0.25));
   for (let i = 0; i < 5; i++) hullDark.push(T(new THREE.BoxGeometry(W * 0.8, 0.04, 0.1), 0, H + 0.03, -hl + 0.6 + i * 0.22));
   if (o.old) {
@@ -2270,7 +2578,7 @@ function buildDesign(o) {
 
   // turret families
   const tw = o.tW, tl = o.tL, th = o.tH;
-  let front, turCamo = [], turDark = [T(new THREE.CylinderGeometry(1.1, 1.1, 0.14, 24), 0, 0, 0)];
+  let front, turCamo = [], turDark = [T(new THREE.CylinderGeometry(Math.min(1.1, tw * 0.42), Math.min(1.1, tw * 0.42), 0.14, 24), 0, 0, 0)];
   if (o.turret === 'dome') {
     const sc = tw / 3.2;
     const dome = new THREE.LatheGeometry(V([[0.001, th], [0.7 * sc, th * 0.96], [1.15 * sc, th * 0.84], [1.45 * sc, th * 0.6], [1.6 * sc, th * 0.36], [1.62 * sc, th * 0.14], [1.5 * sc, 0]]), 28);
@@ -2282,6 +2590,7 @@ function buildDesign(o) {
       angular: [[-tw / 2 + 0.15, -tl * 0.6], [tw / 2 - 0.15, -tl * 0.6], [tw / 2, -tl * 0.2], [tw / 2, tl * 0.1], [tw / 2 - 0.45, tl * 0.5], [-tw / 2 + 0.45, tl * 0.5], [-tw / 2, tl * 0.1], [-tw / 2, -tl * 0.2]],
       horseshoe: (() => { const zf = tl * 0.45, rr = tw / 2, z0 = zf - (tl - rr), pts = [[rr, zf]]; for (let i = 0; i <= 16; i++) { const a = i / 16 * Math.PI; pts.push([rr * Math.cos(a), z0 - rr * Math.sin(a)]); } pts.push([-rr, zf]); return pts; })(),
       armata: [[-tw / 2, -tl * 0.5], [tw / 2, -tl * 0.5], [tw / 2, tl * 0.18], [tw / 2 - 0.65, tl * 0.5], [-tw / 2 + 0.65, tl * 0.5], [-tw / 2, tl * 0.18]],
+      ifv: [[-tw / 2, -tl * 0.5], [tw / 2, -tl * 0.5], [tw / 2, tl * 0.15], [tw / 2 - 0.25, tl * 0.5], [-tw / 2 + 0.25, tl * 0.5], [-tw / 2, tl * 0.15]],
     };
     const bev = o.turret === 'armata' ? 0.14 : 0.07;
     const tg = new THREE.ExtrudeGeometry(new THREE.Shape(V(shapes[o.turret].map(([x, z]) => [x, -z]))), { depth: th, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 2 });
@@ -2306,10 +2615,13 @@ function buildDesign(o) {
     for (const sx of [-1, 1]) turDark.push(T(new THREE.BoxGeometry(0.22, 0.5, 0.22), sx * 0.75, th + 0.3, -tl * 0.3)); }
   if (!o.old) turCamo.push(T(new THREE.BoxGeometry(0.42, 0.36, 0.45), tw * 0.22, th + 0.18, front - 0.55)); // gunner's sight
   if (!o.old) for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) { const tb = new THREE.CylinderGeometry(0.06, 0.06, 0.32, 8); tb.rotateX(Math.PI / 2 - 0.45); tb.rotateY(sx * 0.5); turDark.push(T(tb, sx * (tw / 2 - 0.1), th * 0.6 + (i % 2) * 0.12, -i * 0.13)); }
+  if (o.tow) { turCamo.push(T(RB(0.5, 0.48, 1.3, 0.04), -tw / 2 - 0.3, th * 0.55, -0.05)); for (const y of [0.12, -0.12]) turDark.push(T(new THREE.CylinderGeometry(0.1, 0.1, 0.05, 12).rotateX(Math.PI / 2), -tw / 2 - 0.3, th * 0.55 + y, 0.62)); } // twin TOW launcher
+  if (o.atgm) turDark.push(T(new THREE.CylinderGeometry(0.08, 0.08, 1.3, 10).rotateX(Math.PI / 2), 0.15, th + 0.25, 0.1), T(new THREE.BoxGeometry(0.1, 0.22, 0.1), 0.15, th + 0.1, 0.1)); // roof ATGM tube
   const tarp = o.turret === 'armata' ? [T(new THREE.BoxGeometry(0.3, 0.2, 0.3), 0.6, th + 0.1, -tl * 0.35)] : [T(new THREE.CylinderGeometry(0.2, 0.2, tw * 0.6, 10).rotateZ(Math.PI / 2), 0, th * 0.6, -tl * 0.6)];
   const glass = [T(new THREE.BoxGeometry(0.34, 0.2, 0.03), tw * 0.22, th + 0.2, front - 0.32)];
   const mantlet = o.mantlet === 'slab' ? merge([RB(1.5, 0.78, 0.26, 0.05).translate(0, 0, 0.12), new THREE.CylinderGeometry(0.16, 0.18, 0.5, 14).rotateX(Math.PI / 2).translate(0, 0, 0.4)])
     : o.mantlet === 'chin' ? merge([new THREE.CylinderGeometry(0.42, 0.42, 1.25, 20, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateX(-Math.PI / 2).translate(0, -0.05, 0.05), new THREE.CylinderGeometry(0.15, 0.17, 0.55, 14).rotateX(Math.PI / 2).translate(0, 0, 0.4)])
+    : o.small ? merge([new THREE.BoxGeometry(0.42, 0.3, 0.35), new THREE.CylinderGeometry(0.07, 0.07, 0.4, 10).rotateX(Math.PI / 2).translate(0, 0, 0.3)])
     : o.turret === 'dome' || o.turret === 'angular' ? merge([new THREE.CylinderGeometry(0.3, 0.3, 0.5, 16).rotateX(Math.PI / 2).translate(0, 0, 0.12), new THREE.BoxGeometry(0.5, 0.4, 0.3)]) : new THREE.BoxGeometry(0.9, 0.58, 0.5).translate(0, 0, 0.1);
   const GL = o.gunLen, gr = o.gunR;
   const gun = [T(new THREE.CylinderGeometry(gr * 0.92, gr * 1.1, GL, 16).rotateX(Math.PI / 2), 0, 0, GL / 2 + 0.4)];
@@ -2328,7 +2640,7 @@ function buildDesign(o) {
     hullCamo: merge(hullCamo), hullDark: merge(hullDark), lights: merge(lights), turCamo: merge(turCamo), turDark: merge(turDark), tarp: merge(tarp), glass: merge(glass), mantlet, gun: merge(gun),
     belt: beltGeometry(bl, br, o.trackW || 0.64, 0.1, 200, sag), wheel, sprocket: TANK_GEO.sprocket, roller: TANK_GEO.roller, antenna: TANK_GEO.antenna,
     L: {
-      turret: [0, H, o.tZ], pivot: [0, th * 0.55, front], muzzleZ: GL + 0.5, coax: [0.33, 0.03, 0.45], sight: [tw * 0.22, th + 0.62, front - 0.2], beltY,
+      turret: [o.tX || 0, H, o.tZ], pivot: [0, th * 0.55, front], muzzleZ: GL + 0.5, coax: [0.33, 0.03, 0.45], sight: [tw * 0.22, th + 0.62, front - 0.2], beltY,
       wheel: { n: o.wheels, start: -span / 2, step: span / (o.wheels - 1), r: wr, y: 0.1 + wr, inter: !!o.interleave }, sprocket: { z: -(bl / 2 - br), y: beltY, r: br - 0.03 }, idler: { z: bl / 2 - br, y: beltY, r: br - 0.06 },
       rollers: { y: beltY + br - 0.16, zs: o.noRollers ? [] : [-1.5, 0, 1.5], r: 0.11 }, antennas: [[tw * 0.35, -tl * 0.45]], belt: { len: bl, r: br, thick: 0.1, sag, width: o.trackW || 0.64 },
       decal: [sideX, th * 0.5, -tl * 0.18, Math.PI / 2], crew: cup ? [cup[0], cup[1] + 0.22 - 1.05, cup[2]] : null, jerry: { y: H + 0.25, pts: [[1.72, -hl + 0.5], [-1.72, -hl + 0.5]] },
@@ -2368,6 +2680,14 @@ const DESIGNS = {
   pz4: buildDesign({ bowMG: true, exhaust: 'box', trackW: 0.46, hull: 'boxy', spares: true, old: true, len: 5.9, hullW: 2.2, hullH: 1.55, skirts: true, turret: 'box', tW: 2.2, tL: 2.6, tH: 0.9, tZ: 0.3, gunLen: 4.3, gunR: 0.065, wheels: 8, wheelR: 0.26, brake: true }),
   panther: buildDesign({ mantlet: 'chin', bowMG: true, exhaust: 'twin', trackW: 0.58, hull: 'steep', interleave: true, noRollers: true, old: true, len: 6.9, hullW: 2.4, hullH: 1.6, skirts: true, turret: 'box', tW: 2.4, tL: 2.9, tH: 0.95, tZ: 0.2, gunLen: 5.4, gunR: 0.065, wheels: 8, wheelR: 0.4, brake: true }),
   tiger: buildDesign({ turret: 'horseshoe', mantlet: 'slab', bowMG: true, exhaust: 'twin', trackW: 0.62, hull: 'boxy', interleave: true, noRollers: true, old: true, len: 6.4, hullW: 2.6, hullH: 1.75, tW: 2.8, tL: 3.0, tH: 1.0, tZ: 0.1, gunLen: 4.9, gunR: 0.085, wheels: 8, wheelR: 0.44, brake: true }),
+  // infantry fighting vehicles and carriers
+  bradley: buildDesign({ hull: 'ifv', ramp: true, bolts: true, skirts: true, turret: 'ifv', small: true, tow: true, trackW: 0.53, len: 6.55, hullW: 2.6, hullH: 1.95, tW: 1.9, tL: 2.2, tH: 0.72, tZ: 0.35, tX: 0.3, gunLen: 2.5, gunR: 0.042, wheels: 6, wheelR: 0.33 }),
+  warrior: buildDesign({ hull: 'ifv', ramp: true, skirts: true, turret: 'box', small: true, trackW: 0.5, len: 6.3, hullW: 2.6, hullH: 1.8, tW: 2.0, tL: 2.3, tH: 0.7, tZ: 0.2, gunLen: 2.9, gunR: 0.04, wheels: 6, wheelR: 0.34 }),
+  marder: buildDesign({ hull: 'ifv', ramp: true, skirts: true, turret: 'ifv', small: true, atgm: true, trackW: 0.5, len: 6.8, hullW: 2.6, hullH: 1.75, tW: 1.6, tL: 2.0, tH: 0.6, tZ: 0.6, gunLen: 2.2, gunR: 0.035, wheels: 6, wheelR: 0.35 }),
+  bmp1: buildDesign({ hull: 'bmp', ribs: true, ramp: false, turret: 'dome', small: true, atgm: true, old: true, trackW: 0.42, len: 6.7, hullW: 2.4, hullH: 1.4, tW: 1.9, tL: 1.9, tH: 0.55, tZ: 0.6, gunLen: 1.9, gunR: 0.07, wheels: 6, wheelR: 0.36, noRollers: false }),
+  bmp2: buildDesign({ hull: 'bmp', ribs: true, turret: 'dome', small: true, atgm: true, trackW: 0.42, len: 6.7, hullW: 2.4, hullH: 1.42, tW: 2.0, tL: 2.0, tH: 0.62, tZ: 0.55, gunLen: 2.9, gunR: 0.04, wheels: 6, wheelR: 0.36 }),
+  bmp3: buildDesign({ hull: 'bmp', ribs: true, turret: 'box', small: true, trackW: 0.45, len: 7.1, hullW: 2.5, hullH: 1.6, tW: 2.3, tL: 2.3, tH: 0.62, tZ: 0.0, gunLen: 3.0, gunR: 0.075, wheels: 6, wheelR: 0.36, noRollers: true }),
+  m113: buildDesign({ hull: 'm113', ramp: true, old: true, turret: 'dome', small: true, trackW: 0.38, len: 5.6, hullW: 2.45, hullH: 1.85, tW: 1.0, tL: 1.0, tH: 0.35, tZ: 0.6, tX: -0.3, gunLen: 1.45, gunR: 0.03, wheels: 5, wheelR: 0.33, noRollers: true }),
 };
 for (const k of ['leopard', 'challenger', 't80', 't90', 't14', 'sprut', 'm48', 'centurion', 'sheridan', 'pt76', 't54', 't55', 'sherman', 'cromwell', 'churchill', 'pz4', 'panther', 'tiger', 'pershing', 'm46', 'chaffee', 't3485', 'm60', 'leo2a4', 't80b', 't64b', 't72a']) for (const g of ['hullCamo', 'turCamo']) worldUV(DESIGNS[k][g], 0.22);
 
@@ -2407,6 +2727,16 @@ const KINDS = {
   m48: { era: 'vietnam', design: 'm48', scheme: 'usv', team: 'blue', hp: 110, maxF: 12.5, reload: 3.0, scale: 1, dmg: 1, name: 'M48A3 Patton', gun: '90 mm HEAT', blurb: 'The US Army and Marines workhorse. Balanced.' },
   centurion: { era: 'vietnam', design: 'centurion', scheme: 'aus', team: 'blue', hp: 125, maxF: 10, reload: 3.2, scale: 1, dmg: 1.05, name: 'Centurion Mk 5/1', gun: '20-pounder APDS', blurb: 'Australian. Slow, tough and very accurate.' },
   sheridan: { era: 'vietnam', design: 'sheridan', scheme: 'usv', team: 'blue', hp: 75, maxF: 16, reload: 3.6, scale: 0.95, dmg: 1.15, name: 'M551 Sheridan', gun: '152 mm HEAT', blurb: 'Light and fast with a huge gun, but thin armour.' },
+  // infantry fighting vehicles: autocannons, anti-tank missiles and a squad in the back
+  bradley: { era: 'modern', design: 'bradley', scheme: 'player', team: 'blue', cls: 'ifv', hp: 80, maxF: 17, reload: 0.18, scale: 0.95, dmg: 0.25, ac: true, acDmg: 0.17, tow: 4, carry: 6, name: 'M2A3 Bradley', gun: '25 mm M242 Bushmaster', blurb: 'Infantry fighting vehicle. Rapid-fire 25 mm, TOW missiles [F] and a rifle squad to dismount [E].' },
+  bradleyA0: { era: 'coldwar', design: 'bradley', scheme: 'merdc', team: 'blue', cls: 'ifv', hp: 70, maxF: 16, reload: 0.2, scale: 0.95, dmg: 0.25, ac: true, acDmg: 0.15, tow: 4, carry: 6, name: 'M2 Bradley', gun: '25 mm M242 Bushmaster', blurb: 'Infantry fighting vehicle. Rapid-fire 25 mm, TOW missiles [F] and a rifle squad to dismount [E].' },
+  warrior: { era: 'modern', design: 'warrior', scheme: 'challenger', team: 'blue', cls: 'ifv', hp: 75, maxF: 15, reload: 0.45, scale: 0.95, dmg: 0.3, ac: true, acDmg: 0.24, carry: 6, name: 'Warrior IFV', gun: '30 mm RARDEN' },
+  marder: { era: 'coldwar', design: 'marder', scheme: 'bw', team: 'blue', cls: 'ifv', hp: 70, maxF: 15, reload: 0.2, scale: 0.95, dmg: 0.2, ac: true, acDmg: 0.12, tow: 2, carry: 6, name: 'Marder 1A3', gun: '20 mm Rh202' },
+  m113: { era: 'vietnam', design: 'm113', scheme: 'usv', team: 'blue', cls: 'ifv', hp: 55, maxF: 16, reload: 0.12, scale: 0.92, dmg: 0.12, ac: true, acDmg: 0.06, carry: 8, name: 'M113 ACAV', gun: '.50 cal M2HB', blurb: 'Armoured cavalry carrier. Fast, a heavy machine gun and a full squad to dismount [E], but thin armour.' },
+  bmp1: { era: 'coldwar', design: 'bmp1', scheme: 'sov', team: 'red', cls: 'ifv', hp: 50, maxF: 15, reload: 5.5, scale: 0.92, dmg: 0.55, pts: 0.6, tow: 1, carry: 6, name: 'BMP-1' },
+  bmp2: { era: 'modern', design: 'bmp2', scheme: 'enemy', team: 'red', cls: 'ifv', hp: 55, maxF: 15, reload: 0.22, scale: 0.92, dmg: 0.22, ac: true, acDmg: 0.15, pts: 0.6, tow: 1, carry: 6, name: 'BMP-2' },
+  bmp2cw: { era: 'coldwar', design: 'bmp2', scheme: 'sov', team: 'red', cls: 'ifv', hp: 55, maxF: 15, reload: 0.22, scale: 0.92, dmg: 0.22, ac: true, acDmg: 0.15, pts: 0.6, tow: 1, carry: 6, name: 'BMP-2' },
+  bmp3: { era: 'modern', design: 'bmp3', scheme: 't80', team: 'red', cls: 'ifv', hp: 65, maxF: 15, reload: 0.22, scale: 0.95, dmg: 0.25, ac: true, acDmg: 0.17, pts: 0.7, tow: 1, carry: 6, name: 'BMP-3' },
   pt76: { era: 'vietnam', design: 'pt76', scheme: 'nva', team: 'red', cls: 'light', hp: 55, maxF: 13, reload: 3.6, scale: 0.92, dmg: 0.7, pts: 0.7, name: 'PT-76B' },
   t54: { era: 'vietnam', design: 't54', scheme: 'nva', team: 'red', cls: 'mbt', hp: 100, maxF: 9, reload: 5, scale: 1, dmg: 1, pts: 1, name: 'T-54A' },
   t55: { era: 'vietnam', design: 't55', scheme: 'nva', team: 'red', cls: 'heavy', hp: 120, maxF: 9.5, reload: 4.6, scale: 1, dmg: 1.1, pts: 1.2, name: 'T-55' },
@@ -2435,25 +2765,28 @@ const ERAS = {
     pool: (w) => [['pz4', 6], ...(w >= 2 ? [['panther', 2 + w * 0.4]] : []), ...(w >= 3 ? [['tiger', 0.6 + w * 0.3]] : [])],
     brief: 'You command an Allied armoured platoon pushing up a valley in the Apennines. German Panzer IVs, Panthers and Tigers hold the high ground, with Grenadiers dug in around them.',
     tint: [1.03, 1.0, 0.93], sat: 0.93 },
+  dday: { label: 'D-Day · 1944', where: 'Omaha Beach · Normandy · 6 June 1944', blue: ['sherman', 'churchill', 'cromwell'], wreck: 'pz4', shell: 240,
+    pool: (w) => [['pz4', 6], ...(w >= 2 ? [['panther', 2 + w * 0.4]] : []), ...(w >= 4 ? [['tiger', 0.4 + w * 0.2]] : [])],
+    brief: 'H-Hour. Your landing craft hit the sand under the bluffs. Get off the beach: knock out the bunkers and MG nests on the bluffs, push up the draws and take the village beyond. Panzers will counter-attack from inland.',
+    tint: [1.0, 1.0, 0.97], sat: 0.9 },
   korea: { label: 'Korea · 1951', where: 'Iron Triangle · Central Korea · 1951', blue: ['pershing', 'm46', 'chaffee'], wreck: 't3485', shell: 260,
     pool: () => [['t3485', 1]],
     brief: 'You command a UN armoured platoon holding a mountain valley. KPA T-34-85s lead the push, with waves of PVA infantry armed with PPSh-41s close behind.',
     tint: [1.02, 1.0, 0.94], sat: 0.92 },
-  coldwar: { label: 'Cold War · 1985', where: 'Fulda Gap · West Germany · 1985', blue: ['m1ip', 'leo2a4', 'm60'], wreck: 't64b', shell: 310,
-    pool: (w) => [['t72a', 5], ['t64b', 4], ...(w >= 2 ? [['t80b', 2 + w * 0.4]] : [])],
-    brief: 'The Cold War has gone hot. You command a NATO platoon holding the Fulda Gap against Soviet T-64Bs, T-72As and T-80Bs and their motor-rifle infantry.',
+  coldwar: { label: 'Cold War · 1985', where: 'Fulda Gap · West Germany · 1985', blue: ['m1ip', 'leo2a4', 'm60', 'bradleyA0'], allyExtra: ['marder'], wreck: 't64b', shell: 310,
+    pool: (w) => [['t72a', 5], ['t64b', 4], ['bmp1', 3], ['bmp2cw', 2 + w * 0.3], ...(w >= 2 ? [['t80b', 2 + w * 0.4]] : [])],
+    brief: 'The Cold War has gone hot. You command a NATO platoon holding the Fulda Gap against Soviet T-64Bs, T-72As and T-80Bs, with BMP-1s and BMP-2s carrying their motor-rifle infantry.',
     tint: [0.99, 1.0, 1.0], sat: 0.9 },
-  vietnam: { label: 'Vietnam · 1968', where: 'Central Highlands · Kontum Province · 1968', blue: ['m48', 'centurion', 'sheridan'], wreck: 't54', shell: 290,
+  vietnam: { label: 'Vietnam · 1968', where: 'Central Highlands · Kontum Province · 1968', blue: ['m48', 'centurion', 'sheridan', 'm113'], wreck: 't54', shell: 290,
     pool: (w) => [['t54', 5], ['pt76', 4], ...(w >= 2 ? [['t55', 2 + w * 0.4]] : [])],
     brief: 'You command an armoured cavalry platoon guarding a highland valley road. NVA PT-76s, T-54s and T-55s are pushing through with infantry close behind.',
     tint: [0.97, 1.03, 0.95], sat: 0.95 },
-  modern: { label: 'Modern · 2020s', where: 'Sector 7 · Valley of Orsk · 18:40 local', blue: ['abrams', 'leopard', 'challenger'], wreck: 't72', shell: 330,
-    pool: (w) => [['t72', 5], ['sprut', 3], ...(w >= 2 ? [['t80', 3]] : []), ...(w >= 3 ? [['t90', 2 + w * 0.3]] : []), ...(w >= 4 ? [['t14', 0.6 + w * 0.25]] : [])],
-    brief: 'You lead a NATO platoon holding the valley road. Sprut-SDs, T-72B3s, T-80BVMs, T-90Ms and T-14 Armatas are coming over the ridges in waves.',
+  modern: { label: 'Modern · 2020s', where: 'Sector 7 · Valley of Orsk · 18:40 local', blue: ['abrams', 'leopard', 'challenger', 'bradley'], allyExtra: ['warrior'], wreck: 't72', shell: 330,
+    pool: (w) => [['t72', 5], ['sprut', 3], ['bmp2', 3], ['bmp3', 1 + w * 0.4], ...(w >= 2 ? [['t80', 3]] : []), ...(w >= 3 ? [['t90', 2 + w * 0.3]] : []), ...(w >= 4 ? [['t14', 0.6 + w * 0.25]] : [])],
+    brief: 'You lead a NATO platoon holding the valley road. Sprut-SDs, T-72B3s, T-80BVMs, T-90Ms and T-14 Armatas are coming over the ridges in waves, with BMP-2s and BMP-3s dropping off infantry.',
     tint: [1, 1, 1], sat: 1 },
 };
-let era = 'modern';
-try { const e = localStorage.getItem('warzone.era'); if (ERAS[e]) era = e; } catch (e) { }
+let era = MAP_ERA; // the map was built for this era at load
 let BLUE_KINDS = ERAS[era].blue;
 let playerKind = BLUE_KINDS[0];
 function loadPlayerKind() { BLUE_KINDS = ERAS[era].blue; playerKind = BLUE_KINDS[0]; try { const k = localStorage.getItem('warzone.tank.' + era); if (BLUE_KINDS.includes(k)) playerKind = k; } catch (e) { } }
@@ -2674,6 +3007,8 @@ class Tank {
       } else {
         const ox = this.pos.x - c.x, oz = this.pos.z - c.z;
         const lx = ox * c.cos - oz * c.sin, lz = ox * c.sin + oz * c.cos; // world -> box local
+        // armour ploughs straight through buildings (the AI only through low ones)
+        if (c.building?.alive && Math.abs(this.speed) > 1.2 && (this.isPlayer || c.building.floors <= 3) && Math.abs(lx) < c.hw + R0 && Math.abs(lz) < c.hd + R0) { collapseBuilding(c.building, this); this.speed *= 0.7; if (this.isPlayer) addShake(0.6); continue; }
         const px = clamp(lx, -c.hw, c.hw), pz = clamp(lz, -c.hd, c.hd);
         const dx = lx - px, dz = lz - pz, d = Math.hypot(dx, dz);
         if (d < R0) {
@@ -2739,6 +3074,16 @@ class Tank {
     this.reload = this.reloadTime;
     const p = this.muzzleWorld(new THREE.Vector3()), d = this.barrelDir(new THREE.Vector3());
     if (!this.isPlayer) { d.x += rr(-1, 1) * this.spread; d.y += rr(-0.5, 1) * this.spread; d.z += rr(-1, 1) * this.spread; d.normalize(); }
+    if (this.K.ac) { // autocannon: light HE rounds in bursts
+      const sp = this.isPlayer ? 0.0035 : 0.004; d.x += rr(-sp, sp); d.y += rr(-sp, sp); d.z += rr(-sp, sp); d.normalize();
+      shells.spawn(p, d, 1050, this, false, { ac: true, acDmg: this.K.acDmg ?? 0.15 });
+      firePool.emit({ x: p.x + d.x * 0.4, y: p.y + d.y * 0.4, z: p.z + d.z * 0.4, life: 0.06, s0: 0.8, s1: 1.2, c0: [16, 9, 3, 1], c1: [4, 1, 0.2, 0] });
+      smokePool.emit({ x: p.x, y: p.y, z: p.z, vx: d.x * 3, vy: 0.5, vz: d.z * 3, life: 1.2, s0: 0.4, s1: 1.6, c0: [0.75, 0.73, 0.7, 0.3], c1: [0.8, 0.78, 0.75, 0], drag: 2 });
+      this.recoil = 0.12;
+      if (!this.isPlayer && (this.burstN = (this.burstN || 0) + 1) % 6 === 0) this.reload = rr(1.4, 2.6);
+      sfx.autocannon(p, this.isPlayer);
+      return true;
+    }
     shells.spawn(p, d, SHELL_SPEED, this, false);
     particles.muzzle(p, d, 1);
     this.recoil = 0.65;
@@ -2753,7 +3098,8 @@ class Tank {
   }
   damage(amount, from, hitPoint) {
     if (!this.alive) return;
-    this.hp -= amount;
+    if (this.team === 'blue') amount *= this.isPlayer ? EASE.playerArmour : EASE.allyArmour; // heavier friendly armour
+    this.hp -= amount; this.lastHit = game.time;
     if (this.hp <= 0) { this.hp = 0; this.destroy(); return; }
     if (this.hp < this.maxHp * 0.35 && !this.smoking) { this.smoking = true; emitters.push({ tank: this, kind: 'damaged', t: 0 }); }
   }
@@ -2846,14 +3192,14 @@ const shells = {
   list: [],
   spawn(p, dir, speed, owner, mg, opts = {}) {
     let mesh = null;
-    if (!mg || opts.tracer !== false) { mesh = new THREE.Mesh(mg ? mgGeo : shellGeo, mg ? mgMat : shellMat); mesh.position.copy(p); scene.add(mesh); }
+    if (!mg || opts.tracer !== false) { mesh = new THREE.Mesh(mg || opts.ac ? mgGeo : shellGeo, mg ? mgMat : shellMat); mesh.position.copy(p); scene.add(mesh); }
     this.list.push({ p: p.clone(), v: dir.clone().multiplyScalar(speed), owner, mg, life: mg ? 2.5 : 6, mesh, ric: 0, ...opts });
   },
   update(dt) {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const s = this.list[i]; s.life -= dt;
       const prev = _v2.copy(s.p);
-      if (s.kind === 'rocket') { steerRocket(s, dt); if (!s.spec.lock && !s.spec.saclos) s.v.y -= 1.5 * dt; } else s.v.y -= GRAVITY * dt;
+      if (s.kind === 'rocket') { steerRocket(s, dt); if (!s.spec.lock && !s.spec.saclos && !s.spec.tow) s.v.y -= 1.5 * dt; } else s.v.y -= GRAVITY * dt;
       s.p.addScaledVector(s.v, dt);
       const hit = segmentHit(prev, s.p, s.owner);
       if (s.mg) suppress(prev, hit ? hit.point : s.p, s.owner);
@@ -2863,6 +3209,7 @@ const shells = {
       }
       if (s.mesh) { s.mesh.position.copy(s.p); s.mesh.lookAt(_v3.copy(s.p).add(s.v)); }
       if (s.kind === 'rocket') continue;
+      if (s.ac) { if (Math.random() < 0.5) firePool.emit({ x: s.p.x, y: s.p.y, z: s.p.z, life: 0.12, s0: 0.3, s1: 0.1, c0: [6, 2.8, 1, 0.8], c1: [2, 0.6, 0.1, 0] }); continue; }
       if (!s.mg) for (let k = 0; k < 3; k++) { const t = k / 3; firePool.emit({ x: lerp(prev.x, s.p.x, t), y: lerp(prev.y, s.p.y, t), z: lerp(prev.z, s.p.z, t), life: 0.22, s0: 0.5, s1: 0.15, c0: [6, 2.8, 1, 0.8], c1: [2, 0.6, 0.1, 0] }); }
       if (!s.mg && Math.random() < 0.6) smokePool.emit({ x: s.p.x, y: s.p.y, z: s.p.z, life: rr(0.6, 1.2), s0: 0.25, s1: 1.1, c0: [0.7, 0.68, 0.65, 0.18], c1: [0.8, 0.78, 0.75, 0], drag: 2 });
     }
@@ -2946,13 +3293,15 @@ function impact(s, hit) {
   const p = hit.point, mg = s.mg;
   if (s.kind === 'rocket') { rocketImpact(s, hit); return false; }
   if (hit.type === 'soldier') { soldierImpact(s, hit); return false; }
-  if (!mg && hit.type !== 'tank') splashDamage(p, 7, 140, s.owner);
+  const ac = !!s.ac;
+  if (!mg && hit.type !== 'tank') splashDamage(p, ac ? 3.5 : 7, ac ? 55 : 140, s.owner);
+  if (hit.coll?.building) damageBuilding(hit.coll.building, mg ? 0.5 : ac ? 4 : 35, p, s.owner);
   if (hit.type === 'tank') {
     const tk = hit.tank;
     // ricochet on very oblique hits
     const cosA = Math.abs(hit.localDir.dot(hit.localN));
     const mine = !!s.owner?.isPlayer;
-    if (!mg && cosA < (mine ? 0.1 : 0.24) && Math.random() < (mine ? 0.35 : 0.75) && s.ric < 1) {
+    if (!mg && !ac && cosA < (mine ? 0.1 : 0.24) && Math.random() < (mine ? 0.35 : 0.75) && s.ric < 1) {
       particles.sparks(p, 30);
       sfx.ricochet(p);
       const shooter = s.owner, n = hit.localN.clone().transformDirection(tk.v.root.matrixWorld);
@@ -2963,19 +3312,21 @@ function impact(s, hit) {
     if (s.owner && s.owner.team === tk.team) { particles.sparks(p, mg ? 3 : 25); if (!mg) sfx.clang(p); return false; } // no friendly fire
     if (mg) { particles.sparks(p, 4); if (Math.random() < 0.3) sfx.ping(p); tk.damage(s.kind === 'bullet' ? 0 : 0.7, s.owner, p); }
     else {
-      particles.penetration(p);
-      sfx.clang(p);
-      let dmg = tk.team === 'blue' ? rr(13, 19) * (s.owner?.K?.dmg ?? 1) : rr(56, 66) * (s.owner && !s.owner.isPlayer ? 0.8 : 1);
+      if (ac) { particles.sparks(p, 8); particles.impactDirt(p, 0.25, [0.4, 0.38, 0.35]); if (Math.random() < 0.4) sfx.clang(p); }
+      else { particles.penetration(p); sfx.clang(p); }
+      let dmg = tk.team === 'blue' ? rr(13, 19) * (s.owner?.K?.dmg ?? 1) : rr(56, 66) * (s.owner && !s.owner.isPlayer ? 0.8 : 1) * (ac ? s.acDmg : 1);
+      if (ac && tk.team === 'blue') dmg = rr(13, 19) * (s.owner?.K?.dmg ?? 0.25);
+      if (tk.K.cls === 'ifv' && !ac) dmg *= 1.4; // thin armour: tank rounds go straight through
       const lp = hit.localP;
       let zone = 'front';
       if (lp.z < HB.z0 + 1.2) { dmg *= 1.7; zone = 'rear'; } else if (Math.abs(lp.x) > HB.x - 0.2 && lp.z < 2.5) { dmg *= 1.3; zone = 'side'; }
       if (lp.y > 1.45) zone += ' turret';
       const wasAlive = tk.alive;
       tk.damage(dmg, s.owner, p);
-      splashDamage(p, 5, 90, s.owner);
+      splashDamage(p, ac ? 2.5 : 5, ac ? 30 : 90, s.owner);
       if (s.owner?.isPlayer && tk.team === 'red') {
         showHitmark();
-        if (wasAlive && !tk.alive) onKill(tk); else feed(`Hit · ${tk.K.name} · ${zone}`, false);
+        if (wasAlive && !tk.alive) onKill(tk); else if (!ac) feed(`Hit · ${tk.K.name} · ${zone}`, false);
       } else if (wasAlive && !tk.alive) {
         if (tk.team === 'red') { game.score += 50 * game.wave; feed(`${s.owner?.K?.name || 'Allies'} destroyed a ${tk.K.name}`, false); }
         else if (!tk.isPlayer) feed(`${tk.K.name} lost`, true);
@@ -2984,6 +3335,7 @@ function impact(s, hit) {
     }
   } else if (hit.type === 'ground') {
     if (mg) { smokePool.emit({ x: p.x, y: p.y + 0.2, z: p.z, vy: 2, life: 0.8, s0: 0.3, s1: 1.4, c0: [0.45, 0.38, 0.3, 0.5], c1: [0.5, 0.45, 0.35, 0] }); }
+    else if (ac) { particles.impactDirt(p, 0.35); if (Math.random() < 0.3) decals.place(p.x, p.z, 0.9); if (Math.random() < 0.5) sfx.explosion(p, 0.3); }
     else { particles.impactDirt(p, 1); decals.place(p.x, p.z, rr(2.6, 3.6)); sfx.explosion(p, 0.8); nearMissShake(p); }
   } else if (hit.type === 'water') {
     if (mg) smokePool.emit({ x: p.x, y: p.y + 0.2, z: p.z, vy: 3, life: 0.7, s0: 0.3, s1: 1.2, c0: [0.85, 0.9, 0.92, 0.6], c1: [0.9, 0.95, 0.97, 0] });
@@ -2993,6 +3345,7 @@ function impact(s, hit) {
     else particles.dust(p, 0.3);
   } else {
     if (mg) particles.sparks(p, 3);
+    else if (ac) { particles.impactDirt(p, 0.35, [0.6, 0.57, 0.52]); particles.dust(p, 0.5, [0.7, 0.66, 0.6]); }
     else { particles.impactDirt(p, 0.9, [0.6, 0.57, 0.52]); particles.dust(p, 1.5, [0.7, 0.66, 0.6]); sfx.explosion(p, 0.8); nearMissShake(p); }
   }
   return false;
@@ -3099,6 +3452,7 @@ const sfx = (() => {
         o.connect(lp); lp.connect(og); og.connect(master); o.start(t); o.stop(end + 0.1);
       }
     },
+    autocannon(pos, own) { if (!ok()) return; const t = ctx.currentTime, { g } = chain(own ? null : pos, own ? 0.75 : 0.9); noise(g, t, 0.16, 'bandpass', 1500, 400, 0.8); thump(g, t, 150, 55, 0.13, 0.9); },
     whiz() { if (!ok()) return; const t = ctx.currentTime, { g } = chain(null, 0.28); noise(g, t, 0.05, 'highpass', 5200, 2400, 1); noise(g, t + 0.01, 0.16, 'bandpass', 3800, 900, 4); },
     beep(locked) { if (!ok()) return; const t = ctx.currentTime, { g } = chain(null, 0.18); thump(g, t, locked ? 1900 : 1300, locked ? 1900 : 1300, 0.07, 0.6); },
     ping(pos) { if (!ok()) return; const t = ctx.currentTime, { g } = chain(pos, 0.3); thump(g, t, 3200, 2400, 0.12, 0.2); },
@@ -3258,7 +3612,7 @@ function showTankChoice() {
   $('adsHint').textContent = LAUNCHERS[I.at].lock ? 'Aim down sights · Javelin seeker (hold to lock)' : `Aim down sights · aim the ${LAUNCHERS[I.at].name}`;
   document.querySelector('.tanksel').hidden = onFoot;
   $('pickLabel').textContent = onFoot ? 'Your kit' : 'Choose your tank';
-  document.querySelectorAll('.tanksel button').forEach((b) => { const k = E.blue[+b.dataset.slot]; b.textContent = KINDS[k].name; b.dataset.tank = k; b.setAttribute('aria-pressed', String(k === playerKind)); });
+  document.querySelectorAll('.tanksel button').forEach((b) => { const k = E.blue[+b.dataset.slot]; b.hidden = !k; if (!k) return; b.textContent = KINDS[k].name; b.dataset.tank = k; b.setAttribute('aria-pressed', String(k === playerKind)); });
   const K = KINDS[playerKind];
   $('tankBlurb').textContent = onFoot ? `${GUNS[I.gun].name} and ${LAUNCHERS[I.at].name}. Your fireteam and a ${ERAS[era].blue.map((k) => KINDS[k].name).join(', ')} platoon fight alongside you against ${I.redRifle}s and ${I.redAT}s.` : `${K.name}: ${K.blurb}`;
 }
@@ -3268,6 +3622,7 @@ document.querySelectorAll('.tanksel button').forEach((b) => b.addEventListener('
 }));
 document.querySelectorAll('.erasel button').forEach((b) => b.addEventListener('click', () => {
   era = b.dataset.era; try { localStorage.setItem('warzone.era', era); } catch (e) { }
+  if (era !== MAP_ERA) { $('loadMap').hidden = false; setTimeout(() => { location.hash = 'era=' + era; location.reload(); }, 30); return; } // each era has its own map
   loadPlayerKind(); showTankChoice(); if (game.mode === 'title') resetWorld();
 }));
 document.querySelectorAll('.rolesel button').forEach((b) => b.addEventListener('click', () => {
@@ -3279,7 +3634,6 @@ document.querySelectorAll('.rolesel button').forEach((b) => b.addEventListener('
 // Scenery wrecks with smoke columns
 // =====================================================================
 const sceneryWrecks = [];
-const WRECK_SPOTS = [[-40, 40, 0.8], [150, 120, 2.2], [-210, 120, -1], [40, -170, 2.6]];
 let wreckEra = null;
 function buildSceneryWrecks() {
   if (wreckEra === era) return;
@@ -3338,7 +3692,7 @@ function onPlayerHit(from, dmg, quiet) {
 }
 function onKill(tk) {
   game.kills++; const pts = Math.round(100 * game.wave * (tk.K.pts || 1)); game.score += pts;
-  game.ammo = Math.min(60, game.ammo + 3);
+  game.ammo = player.tank?.K.ac ? Math.min(600, game.ammo + 30) : Math.min(60, game.ammo + 3);
   feed(`${tk.K.name} destroyed · +${pts}`, false);
   bigMsg('TARGET DESTROYED', null, 1.4);
 }
@@ -3490,9 +3844,9 @@ function pickEnemyKind(w) {
   return pool[0][0];
 }
 // the enemy attacks from one side: a front beyond the village, opposite where your force starts
-const ENEMY_FRONT = Math.PI / 4;
+const ENEMY_FRONT = MAP.front;
 function enemyFrontPoint(d0, d1, lim) {
-  const pe = playerEnt(), ox = pe ? pe.pos.x : -150, oz = pe ? pe.pos.z : -150;
+  const pe = playerEnt(), ox = pe ? pe.pos.x : START[0], oz = pe ? pe.pos.z : START[1];
   const a = ENEMY_FRONT + rr(-0.55, 0.55), d = rr(d0, d1);
   let x = ox + Math.cos(a) * d, z = oz + Math.sin(a) * d;
   const r = Math.hypot(x, z); if (r > lim) { x *= lim / r; z *= lim / r; }
@@ -3508,18 +3862,20 @@ function spawnEnemy() {
     const t = new Tank(false, x, z, Math.atan2(-x, -z), kind);
     const w = game.wave;
     t.ai = newAI();
-    t.reloadTime = t.K.reload * Math.max(0.65, 1 - w * 0.05);
+    t.reloadTime = t.K.reload * Math.max(0.65, 1 - w * 0.05) * EASE.enemyReload;
     t.reload = rr(2, 4);
-    t.spread = Math.max(0.006, 0.03 - w * 0.0025) * (t.K.cls === 'light' ? 1.3 : 1);
+    t.spread = Math.max(0.006, 0.03 - w * 0.0025) * (t.K.cls === 'light' ? 1.3 : 1) * EASE.enemySpread;
     t.maxF = t.K.maxF + Math.min(w, 6) * 0.4;
     return t;
   }
 }
-const ALLY_SLOTS = [[-16, -14], [16, -14], [0, -30], [-34, -30], [34, -30], [-18, -46], [18, -46], [0, -62]];
+// difficulty: friendly armour soaks most of each hit, enemy gunners are slower and less accurate
+const EASE = { playerArmour: 0.4, allyArmour: 0.45, playerInf: 0.55, allyInf: 0.6, enemySpread: 1.6, enemyReload: 1.4, tankRegen: 2.5 };
+const ALLY_SLOTS = MAP.allySlots || [[-16, -14], [16, -14], [0, -30], [-34, -30], [34, -30], [-18, -46], [18, -46], [0, -62]];
 function spawnAlly(slot) {
   const pt = playerEnt(), sk = pt.isSoldier ? 2.2 : 1, sx = ALLY_SLOTS[slot][0] * sk, sz = ALLY_SLOTS[slot][1] * sk, h = pt.heading;
   const x = pt.pos.x + sx * Math.cos(h) + sz * Math.sin(h), z = pt.pos.z - sx * Math.sin(h) + sz * Math.cos(h);
-  const others = BLUE_KINDS.filter((k) => k !== playerKind);
+  const others = [...BLUE_KINDS.filter((k) => k !== playerKind), ...(ERAS[era].allyExtra || [])];
   const t = new Tank(false, x, z, h, slot === 2 || !others.length ? playerKind : others[slot % others.length]);
   t.ai = newAI(); t.ai.slot = slot;
   t.spread = 0.01; t.reload = rr(1, 3);
@@ -3540,6 +3896,7 @@ function reinforceInfantry() {
 }
 function nextWave() {
   game.wave++;
+  if (MAP.sea) manBunkers();
   const onFoot = !!player.soldier;
   const B = BATTLE[battleName];
   game.toSpawn = B.tanks(game.wave, onFoot);
@@ -3562,7 +3919,7 @@ function updateWaves(dt) {
   } else if (game.waveTimer <= 0 && !tanks.some((t) => t.team === 'red' && t.alive) && !redInf && !(game.squadsToSpawn > 0)) {
     game.waveTimer = 7;
     bigMsg(`WAVE ${game.wave} CLEARED`, 'Field repairs and resupply', 3);
-    const pt = playerEnt(); pt.hp = Math.min(pt.maxHp, pt.hp + 35); game.ammo = Math.max(game.ammo, 40);
+    const pt = playerEnt(); pt.hp = Math.min(pt.maxHp, pt.hp + 35); game.ammo = Math.max(game.ammo, pt.K?.ac ? 400 : 40); if (pt.K?.tow) game.tow = pt.K.tow; if (pt.K?.carry) pt.dismounted = false;
     if (player.soldier) { const G = GUNS[ERA_INF[era].gun], L = LAUNCHERS[ERA_INF[era].at]; inf.reserve = G.reserve; inf.at = Math.min(L.max, inf.at + 2); inf.nades = Math.min(4, inf.nades + 2); if (!inf.atLoaded) inf.reloadT = Math.min(inf.reloadT, 0.1); spawnFireteam(); }
     reinforceAllies();
   }
@@ -3577,6 +3934,7 @@ function hasLOS(a, b) {
   const steps = 16;
   for (let i = 1; i < steps; i++) { const t = i / steps; const x = lerp(a.x, b.x, t), y = lerp(a.y, b.y, t), z = lerp(a.z, b.z, t); if (y < terrainHeight(x, z) + 0.3) return false; }
   for (const c of buildings) {
+    if (c.dead) continue;
     const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, ox = a.x - c.x, oz = a.z - c.z;
     const r = rayBox(ox * c.cos - oz * c.sin, a.y, ox * c.sin + oz * c.cos, dx * c.cos - dz * c.sin, dy, dx * c.sin + dz * c.cos, -c.hw, c.hw, c.y0, c.y0 + c.h, -c.hd, c.hd);
     if (r && r.t <= 1) return false;
@@ -3619,6 +3977,7 @@ function pickFoe(t) {
 function dryTarget(v2) {
   // keep AI destinations on dry ground: push points inside the lake out to its bank
   if (!inWater(v2.x, v2.y)) return v2;
+  if (MAP.sea) return v2.set(v2.x, shoreZ(v2.x) + 25);
   const dx = v2.x - LAKE.x, dz = v2.y - LAKE.z, d = Math.hypot(dx, dz) || 1;
   return v2.set(LAKE.x + dx / d * (WATER_R + 6), LAKE.z + dz / d * (WATER_R + 6));
 }
@@ -3631,6 +3990,8 @@ function updateAI(t, dt) {
   if (!foe && !following) { t.input.throttle = 0; t.input.steer = 0; return; }
   const ref = foe || lead;
   const dist = Math.hypot(ref.pos.x - t.pos.x, ref.pos.z - t.pos.z);
+  // carriers drop their squad off once the enemy is close
+  if (t.K.carry && !t.dismounted && foe && Math.hypot(foe.pos.x - t.pos.x, foe.pos.z - t.pos.z) < 200) { t.dismounted = true; dismountSquad(t); }
   ai.retarget -= dt;
   if (following) {
     if (ai.retarget <= 0) {
@@ -3686,10 +4047,14 @@ function updateAI(t, dt) {
       shells.spawn(from, dir, 760, t, true, { kind: 'bullet', dmg: t.team === 'red' ? 14 : 30, tracer: t.mgN % 3 === 0 });
       sfx.mg(from);
     }
-    if (los && err < 0.03 && t.reload <= 0 && ai.los > ai.fireDelay + 1.5 && fd > 45 && Math.random() < dt * 0.4) t.fire();
+    if (t.K.ac && los && err < 0.05 && t.reload <= 0 && ai.los > 0.8 && fd < 420) t.fire();
+    else if (los && err < 0.03 && t.reload <= 0 && ai.los > ai.fireDelay + 1.5 && fd > 45 && Math.random() < dt * 0.4) t.fire();
     return;
   }
-  if (los && err < 0.03 && t.reload <= 0 && ai.los > ai.fireDelay && foe.alive) t.fire();
+  // missile carriers open up on tanks from range
+  t.towT = (t.towT ?? rr(4, 10)) - dt;
+  if (t.K.tow && t.towT <= 0 && los && fd > 60 && fd < 650 && err < 0.12 && ai.los > 1) { t.towT = rr(14, 22) * (t.team === 'red' ? EASE.enemyReload : 1); fireTOW(t, tgt.clone()); }
+  if (los && err < (t.K.ac ? 0.05 : 0.03) && t.reload <= 0 && ai.los > ai.fireDelay && foe.alive) t.fire();
 }
 
 // =====================================================================
@@ -3701,6 +4066,19 @@ function updatePlayer(dt) {
   if (player.soldier) return updateInfantryPlayer(dt);
   const t = player.tank; if (!t) return;
   if (t.alive && game.mode === 'play') {
+    if (game.time - (t.lastHit ?? -99) > 7) t.hp = Math.min(t.maxHp, t.hp + EASE.tankRegen * dt); // crew field repairs out of contact
+    // IFV: TOW missile guided onto the crosshair [F], dismount the rifle squad [E]
+    game.towT = Math.max(0, (game.towT || 0) - dt);
+    if (keys.KeyF && !game.fHeld && t.K.tow) {
+      if (game.tow > 0 && game.towT <= 0) { fireTOW(t, cam.aim.clone()); game.tow--; game.towT = 5; feed(`TOW away · ${game.tow} left · keep the crosshair on target`, false); }
+      else feed(game.tow > 0 ? 'TOW reloading' : 'No TOWs left', true);
+    }
+    game.fHeld = !!keys.KeyF;
+    if (keys.KeyE && !game.eHeld && t.K.carry) {
+      if (!t.dismounted) { t.dismounted = true; dismountSquad(t); feed('Dismounts out · squad deploying behind you', false); }
+      else feed('Your squad is already out', true);
+    }
+    game.eHeld = !!keys.KeyE;
     const th = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + touch.throttle;
     const st = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0) + touch.steer;
     t.input.throttle = clamp(th, -1, 1); t.input.steer = clamp(st, -1, 1);
@@ -3709,7 +4087,7 @@ function updatePlayer(dt) {
     aimTurret(t, cam.aim, dt, 1.1, 0.6);
     if ((mouse.fire || mouse.pressed || touch.fire) && game.ammo > 0 && t.reload <= 0) {
       mouse.pressed = false;
-      if (t.fire()) { game.ammo--; addShake(0.35); lastReloadReady = false; }
+      if (t.fire()) { game.ammo--; addShake(t.K.ac ? 0.05 : 0.35); lastReloadReady = !!t.K.ac; }
     }
     if (t.reload > 0.3) mouse.pressed = false; // don't queue a shot from a click made mid-reload
     if (!lastReloadReady && t.reload <= 0) { lastReloadReady = true; sfx.reloaded(); }
@@ -3849,6 +4227,7 @@ const ERA_INF = {
   vietnam: { gun: 'm16', at: 'law', blueArm: 'm16', redArm: 'ak', blue: { uni: 0x4f5a34, gear: 0x5a5a3a, helmet: 'm1', cam: [0x4f5a34, 0x4a5531, 0x45502e, 0x55603a] }, red: { uni: 0x4c5636, gear: 0x6a5e40, helmet: 'pith', cam: [0x55603c, 0x4f5938, 0x495234, 0x5b6641] }, redRifle: 'AK-47', redAT: 'RPG-7', redAuto: true, unitName: 'NVA rifleman' },
   ww2: { gun: 'garand', at: 'bazooka', blueArm: 'garand', redArm: 'kar', blue: { uni: 0x5d5a3c, gear: 0x6b6646, helmet: 'm1', cam: [0x6b6345, 0x645d41, 0x5d563c, 0x726a4a] }, red: { uni: 0x585c4e, gear: 0x3e3a30, helmet: 'stahl', cam: [0x5e6254, 0x585c4e, 0x525648, 0x646859] }, redRifle: 'Kar98k', redAT: 'Panzerschreck', redAuto: false, unitName: 'Grenadier' },
 };
+ERA_INF.dday = ERA_INF.ww2;
 
 function limb(ax, ay, az, bx, by, bz, r) {
   const d = new THREE.Vector3(bx - ax, by - ay, bz - az), len = d.length();
@@ -3905,6 +4284,7 @@ function weaponGeo(kind, col, at) {
   return P;
 }
 function soldierGeos(eraKey, team, role) {
+  if (eraKey === 'dday') eraKey = 'ww2'; // same armies as Italy
   const key = eraKey + team + role;
   if (SOLDIER_CACHE[key]) return SOLDIER_CACHE[key];
   const I = ERA_INF[eraKey], look = I[team];
@@ -4063,6 +4443,7 @@ class Soldier {
   center(out) { return out.set(this.pos.x, this.pos.y + this.height() * 0.55, this.pos.z); }
   damage(amount, from, blast) {
     if (!this.alive) return;
+    if (this.team === 'blue') amount *= this.isPlayer ? EASE.playerInf : EASE.allyInf;
     this.hp -= amount; this.lastHit = game.time; this.flinch = 1; this.supp = Math.min(2, this.supp + 0.5);
     if (this.isPlayer) onPlayerHit(from, amount, amount < 30);
     if (this.hp <= 0) {
@@ -4206,6 +4587,17 @@ function fireRocket(from, dir, owner, spec, target) {
   sfx.rocket(from);
   for (let i = 0; i < 14; i++) smokePool.emit({ x: from.x - dir.x * 1.2, y: from.y - dir.y * 1.2, z: from.z - dir.z * 1.2, vx: -dir.x * rr(4, 12) + rr(-1, 1), vy: rr(-0.5, 1.5), vz: -dir.z * rr(4, 12) + rr(-1, 1), life: rr(1, 2.4), s0: 0.6, s1: rr(2.5, 4), c0: [0.75, 0.73, 0.7, 0.55], c1: [0.85, 0.83, 0.8, 0], drag: 2.2 }); // backblast
 }
+const _towV = new THREE.Vector3();
+function fireTOW(t, aimP) {
+  const from = t.v.turret.localToWorld(new THREE.Vector3(-1.3, 0.9, 0.8));
+  const dir = aimP.clone().sub(from).normalize(); dir.y += 0.02; dir.normalize();
+  fireRocket(from, dir, t, { lock: false, tow: true, speed: 125, dmg: t.isPlayer ? 120 : 50 }, null);
+}
+// an IFV's rifle squad climbs out of the back ramp
+function dismountSquad(t) {
+  const back = t.forward(new THREE.Vector3()).multiplyScalar(-6);
+  deploySquad(t.pos.x + back.x, t.pos.z + back.z, t.K.carry, t.team, t.heading);
+}
 function steerRocket(s, dt) {
   s.age += dt;
   const spec = s.spec;
@@ -4218,6 +4610,9 @@ function steerRocket(s, dt) {
     const want = camera.position.clone().addScaledVector(cd, k).sub(s.p).normalize();
     dir.lerp(want, Math.min(1, dt * 5)).normalize();
     inf.guiding = 0.2;
+  } else if (spec.tow && s.owner?.isPlayer && s.owner.alive && player.tank === s.owner) {
+    // wire-guided: fly onto wherever the gunner's crosshair is
+    dir.lerp(_towV.copy(cam.aim).sub(s.p).normalize(), Math.min(1, dt * 4)).normalize();
   } else if (s.target && s.target.alive) {
     const tg = new THREE.Vector3(s.target.pos.x, s.target.pos.y + 1.6 * s.target.size, s.target.pos.z);
     const hx = tg.x - s.p.x, hz = tg.z - s.p.z, h = Math.hypot(hx, hz);
@@ -4267,7 +4662,8 @@ function soldierImpact(s, hit) {
   const sd = hit.soldier, p = hit.point;
   if (s.owner && s.owner.team === sd.team) return;
   for (let i = 0; i < 5; i++) smokePool.emit({ x: p.x, y: p.y, z: p.z, vx: rr(-1, 1), vy: rr(0, 1.5), vz: rr(-1, 1), life: rr(0.3, 0.7), s0: 0.12, s1: 0.5, c0: [0.32, 0.03, 0.02, 0.8], c1: [0.25, 0.02, 0.02, 0] });
-  if (!s.mg) { // a tank round or rocket landing on a soldier
+  if (s.ac) { particles.impactDirt(p, 0.4); splashDamage(p, 3, 50, s.owner); sd.damage(95, s.owner, p); }
+  else if (!s.mg) { // a tank round or rocket landing on a soldier
     particles.explosion(p, 0.8, true); splashDamage(p, 7, 150, s.owner); sd.damage(500, s.owner, p);
   } else sd.damage((s.dmg ?? 30) * (hit.head ? 2.6 : 1), s.owner);
   if (s.owner?.isPlayer && sd.team === 'red') { showHitmark(); if (!sd.alive && !sd.counted) onKillSoldier(sd); }
@@ -4320,7 +4716,7 @@ function updateSoldierAI(s, dt) {
   const eye = _se.set(s.pos.x, s.pos.y + s.height() - 0.15, s.pos.z);
   if (foe) {
     fd = Math.hypot(foe.pos.x - s.pos.x, foe.pos.z - s.pos.z);
-    if (ai.losT <= 0) { ai.losT = rr(0.4, 0.7); const c = foe.isSoldier ? foe.center(_sf) : _sf.set(foe.pos.x, foe.pos.y + 1.4 * foe.size, foe.pos.z); ai.los = fd < (s.role === 'at' ? 190 : 170) && hasLOS(eye, c); }
+    if (ai.losT <= 0) { ai.losT = rr(0.4, 0.7); const c = foe.isSoldier ? foe.center(_sf) : _sf.set(foe.pos.x, foe.pos.y + 1.4 * foe.size, foe.pos.z); ai.los = fd < (s.role === 'at' ? 190 : s.mg42 ? 280 : 170) && hasLOS(eye, c); }
   } else ai.los = false;
   const engage = foe && ai.los;
   if (engage) ai.contact = game.time;
@@ -4335,7 +4731,7 @@ function updateSoldierAI(s, dt) {
   // in contact: bounding overwatch (half the squad rushes to the next cover while the rest fire), hugging cover
   const myTurn = !s.squad || (Math.floor(game.time / 7) + s.boundOff) % 2 === 0;
   const pinned = s.supp > 1;
-  if (inContact && ai.coverT <= 0) {
+  if (inContact && ai.coverT <= 0 && !s.bunker) {
     ai.coverT = rr(3, 6);
     const adv = myTurn && !pinned && Math.hypot(tx - s.pos.x, tz - s.pos.z) > 10;
     ai.cover = findCover(s, foe, adv ? tx : s.pos.x, adv ? tz : s.pos.z);
@@ -4388,11 +4784,11 @@ function updateSoldierAI(s, dt) {
   }
   s.fireT -= dt;
   if (s.fireT > 0) return;
-  const red = s.team === 'red', auto = !red || ERA_INF[era].redAuto;
-  if (s.burst <= 0) s.burst = auto ? Math.floor(rr(2, 6)) : 1;
+  const red = s.team === 'red', auto = !red || ERA_INF[era].redAuto || s.mg42;
+  if (s.burst <= 0) s.burst = s.mg42 ? Math.floor(rr(6, 12)) : auto ? Math.floor(rr(2, 6)) : 1;
   s.burst--;
-  s.fireT = s.burst > 0 ? 0.1 : rr(red ? 0.9 : 0.7, red ? 2.4 : 1.8) * (auto ? 1 : 1.6);
-  const spread = (red ? Math.max(0.018, 0.045 - game.wave * 0.003) : 0.03) * (foe.isPlayer ? 1 : 0.8) * (1 + s.supp * 1.2) * (s.prone > 0.5 ? 0.7 : 1);
+  s.fireT = s.burst > 0 ? (s.mg42 ? 0.07 : 0.1) : rr(red ? 0.9 : 0.7, red ? 2.4 : 1.8) * (auto ? 1 : 1.6) * (red ? EASE.enemyReload : 1);
+  const spread = (red ? Math.max(0.018, 0.045 - game.wave * 0.003) * EASE.enemySpread : 0.03) * (foe.isPlayer ? 1 : 0.8) * (1 + s.supp * 1.2) * (s.prone > 0.5 ? 0.7 : 1);
   const dir = c.clone().sub(from).normalize(); dir.x += rr(-spread, spread); dir.y += rr(-spread, spread) * 0.6; dir.z += rr(-spread, spread); dir.normalize();
   fireBullet(from, dir, s, red ? (auto ? 11 : 26) : 24, Math.random() < 0.35);
   firePool.emit({ x: from.x, y: from.y, z: from.z, life: 0.05, s0: 0.35, s1: 0.5, c0: [16, 9, 3, 1], c1: [4, 1, 0.2, 0] });
@@ -4425,7 +4821,7 @@ function lobVelocity(from, to, speed = 14) {
   return new THREE.Vector3(dx / t, (to.y - from.y + 0.5 * GRAVITY * t * t) / t, dz / t);
 }
 function throwGrenade(from, vel, owner) {
-  const m = new THREE.Mesh(era === 'ww2' && owner.team === 'red' ? stickNadeGeo : nadeGeo, nadeMat); m.castShadow = true; m.position.copy(from); scene.add(m);
+  const m = new THREE.Mesh((era === 'ww2' || era === 'dday') && owner.team === 'red' ? stickNadeGeo : nadeGeo, nadeMat); m.castShadow = true; m.position.copy(from); scene.add(m);
   grenades.push({ p: from.clone(), v: vel.clone(), owner, fuse: owner.isPlayer ? 3.2 : rr(2.6, 3.4), m, spin: new THREE.Vector3(rr(-12, 12), rr(-12, 12), rr(-12, 12)), rest: false, warned: false });
 }
 function updateGrenades(dt) {
@@ -4471,11 +4867,16 @@ function spawnSquad(n, team = 'red') {
       // friendly squads deploy around and behind the player
       const base = pe ? pe.pos : new THREE.Vector3(), h = (pe?.heading ?? 0) + Math.PI + rr(-1.4, 1.4), r = rr(25, 55);
       x = base.x + Math.sin(h) * r; z = base.z + Math.cos(h) * r;
+      if (MAP.sea && game.wave <= 1) { x = base.x + rr(-130, 130); z = shoreZ(x) + rr(19, 30); } // the first waves come in over the sand
       if (Math.hypot(x, z) > ARENA + 20) continue;
     }
     if (inWater(x, z) || queryColliders(x, z, 8).some((c) => c.type === 'obb')) continue;
+    return deploySquad(x, z, n, team, team === 'red' ? Math.atan2(-x, -z) : pe?.heading ?? 0);
+  }
+}
+function deploySquad(x, z, n, team, face) {
+  {
     const sq = { team, target: new THREE.Vector2(x, z), retarget: 0, members: [] };
-    const face = team === 'red' ? Math.atan2(-x, -z) : pe?.heading ?? 0;
     for (let i = 0; i < n; i++) {
       const sl = [rr(-8, 8), rr(-8, 8)];
       const s = new Soldier(team, x + sl[0], z + sl[1], { role: i === 0 || (n > 5 && i === 4) ? 'at' : 'rifle', heading: face });
@@ -4540,6 +4941,7 @@ function updateSoldiers(dt) {
 // Fire support and battlefield atmosphere: air strikes, artillery, distant smoke
 // =====================================================================
 const AIR = {
+  dday: { name: 'P-47 Thunderbolts', jet: false, col: 0x5b5c3e, speed: 140, alt: 120 },
   ww2: { name: 'P-47 Thunderbolts', jet: false, col: 0x5b5c3e, speed: 140, alt: 120 },
   korea: { name: 'F-86 Sabres', jet: true, col: 0xa4a8ac, speed: 200, alt: 150 },
   vietnam: { name: 'F-4 Phantoms', jet: true, col: 0x5f6444, speed: 220, alt: 160 },
@@ -5034,7 +5436,7 @@ function updateMarkers() {
 }
 function updateHUD(dt) {
   camera.updateMatrixWorld(); // project markers with this frame's camera, not last frame's
-  $('clu').hidden = true; $('adsRet').hidden = true; $('infCross').hidden = true; $('wLabel').textContent = player.tank ? player.tank.K.gun : '';
+  $('clu').hidden = true; $('adsRet').hidden = true; $('infCross').hidden = true; $('wLabel').textContent = player.tank ? player.tank.K.gun + (player.tank.K.tow ? ` · TOW ${game.tow} [F]` : '') + (player.tank.K.carry && !player.tank.dismounted ? ' · squad [E]' : '') : '';
   if (player.soldier) return updateInfantryHUD(dt);
   $('w2Label').textContent = 'Coax MG';
   const t = player.tank; if (!t) return;
@@ -5177,10 +5579,13 @@ const ENV = {
 };
 Object.assign(ENV.ww2, { forest: 0x3c4a26, snowline: 205, vcover: 0.5 }); Object.assign(ENV.korea, { vcover: 0.9 }); Object.assign(ENV.vietnam, { vcover: 0.72 }); Object.assign(ENV.coldwar, { vcover: 0.6 }); Object.assign(ENV.modern, { vcover: 0.45 });
 Object.assign(ENV.ww2, { forest: 0x3c4a26, snowline: 205 }); Object.assign(ENV.korea, { forest: 0x3a4232, snowline: 120 });
+// Normandy, June morning: lush hedgerow country, grey-green Channel, broken cloud
+ENV.dday = { ...ENV.ww2, grass: 0x5a7e2c, lush: 0x456a26, dry: 0x8a8a44, dirt: 0x6e5a40, rock: 0x8e8a80, far: 0x6a7266, sun: 0xfff2dc, sunI: 4.4, hemi: [0xa6b8cc, 0x4e4a36, 1.0], sky: [3.2, 1.8, 0.004], fog: 0xb2bcc4, fogD: 0.0009, exp: 0.74, vcover: 0.62, cover: 0.4, forest: 0x34502a, snowline: 9999, water: 0x35606a, flowers: 0.6 };
 Object.assign(ENV.vietnam, { forest: 0x1f4a18 }); Object.assign(ENV.coldwar, { forest: 0x37442a, snowline: 190 }); Object.assign(ENV.modern, { forest: 0x33472a, snowline: 195 });
 function paintTerrain(P) {
   const C = (h) => new THREE.Color(h);
-  const cg = C(P.grass), cl = C(P.lush), cd = C(P.dry), cdi = C(P.dirt), cr = C(P.rock), cro = C(P.road), crut = C(P.dirt).multiplyScalar(0.8), cf = C(P.far), cs = C(0x7c6a48), snow = C(0xe8edf2);
+  const cg = C(P.grass), cl = C(P.lush), cd = C(P.dry), cdi = C(P.dirt), cr = C(P.rock), cro = C(P.road), crut = C(P.dirt).multiplyScalar(0.8), cf = C(P.far), cs = C(MAP.sea ? 0xd0bb90 : 0x7c6a48), snow = C(0xe8edf2);
+  const cpave = C(!MAP.town.streets ? P.dirt : P.snow ? 0x9a9a98 : 0x7a766e);
   const col = terrain.geometry.attributes.color, c = new THREE.Color(), N = col.count, forest = C(P.forest ?? 0x34482a), snowline = P.snowline ?? 9999;
   for (let k = 0; k < N; k++) {
     const o = k * 11, F = TF;
@@ -5190,7 +5595,7 @@ function paintTerrain(P) {
     c.lerp(forest, mt * (1 - smoothstep(0.3, 0.55, F[o + 10])) * (1 - smoothstep(snowline - 40, snowline, ht)) * (0.6 + 0.35 * F[o]));
     c.lerp(snow, smoothstep(snowline, snowline + 30, ht) * (1 - smoothstep(0.4, 0.7, F[o + 10])) * 0.92);
     if (P.snow) c.lerp(snow, P.snow * (1 - smoothstep(0.18, 0.4, F[o + 10])) * (0.8 + 0.2 * F[o])); // snow settles on everything but steep rock
-    c.lerp(cro, F[o + 5] * (P.snow ? 0.7 : 1)).lerp(crut, F[o + 6]).lerp(cdi, F[o + 7] * (P.snow ? 0.4 : 1)).lerp(cs, F[o + 8]);
+    c.lerp(cro, F[o + 5] * (P.snow ? 0.7 : 1)).lerp(crut, F[o + 6]).lerp(cpave, F[o + 7] * (P.snow ? 0.55 : 1)).lerp(cs, F[o + 8]);
     const sh = F[o + 9] * TAO[k];
     col.setXYZ(k, c.r * sh, c.g * sh, c.b * sh);
   }
@@ -5256,17 +5661,17 @@ function resetWorld() {
   grade.uniforms.eraTint.value.set(...ERAS[era].tint); grade.uniforms.eraSat.value = ERAS[era].sat;
   buildSceneryWrecks();
   applyEraEnv();
-  const h0 = Math.atan2(VILLAGE.x + 150, VILLAGE.y + 150);
+  const h0 = MAP.sea ? 0 : Math.atan2(VILLAGE.x - START[0], VILLAGE.y - START[1]);
   player.tank = null; player.soldier = null;
-  if (game.role === 'infantry') { player.soldier = new Soldier('blue', -150, -150, { isPlayer: true, heading: h0 }); resetInfantryKit(); }
-  else player.tank = new Tank(true, -150, -150, h0);
+  if (game.role === 'infantry') { player.soldier = new Soldier('blue', START[0], START[1], { isPlayer: true, heading: h0 }); resetInfantryKit(); }
+  else player.tank = new Tank(true, START[0], START[1], h0);
   cam.yaw = h0; cam.pitch = -0.04;
 }
 function startGame() {
   sfx.init();
   game.role = titleRole;
   resetWorld();
-  Object.assign(game, { squadsToSpawn: 0, mode: 'play', wave: 0, kills: 0, score: 0, waveTimer: 0, toSpawn: 0, ammo: 40, mgHeat: 0, mgCool: false });
+  Object.assign(game, { squadsToSpawn: 0, mode: 'play', wave: 0, kills: 0, score: 0, waveTimer: 0, toSpawn: 0, ammo: player.tank?.K.ac ? 400 : 40, tow: player.tank?.K.tow || 0, towT: 0, mgHeat: 0, mgCool: false });
   for (const a of [...dmgDirs.children]) a.remove();
   $('feed').innerHTML = '';
   setScreen(null);
@@ -5332,6 +5737,8 @@ function simStep(simDt) {
     if (game.mode === 'play') updateWaves(simDt);
     for (const t of tanks) { if (!t.isPlayer && t.alive && t.ai && game.mode !== 'title') updateAI(t, simDt); t.update(simDt); }
     updateSoldiers(simDt);
+    updateCity(simDt);
+    updateBeach(simDt);
     if (game.mode !== 'title') updateSupport(simDt);
     shells.update(simDt);
     updateFlying(simDt);
@@ -5403,7 +5810,7 @@ applyQuality();
 $('loading').hidden = true;
 setScreen('title');
 requestAnimationFrame(frame);
-window.__warzone = { game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, sun, sunFar, support, _dbg: { shells, segmentHit, hasLOS, terrainHeight }, sim: (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { game.time += dt; simStep(dt); updateCamera(dt); camera.updateMatrixWorld(); } }, aoPass, renderPass, nearGrass, soldiers, inf, keys, spawnSquad, setEra: (e, r) => { era = e; titleRole = r; game.role = r; loadPlayerKind(); showTankChoice(); resetWorld(); } };
+window.__warzone = { cityBuildings, game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, sun, sunFar, support, _dbg: { shells, segmentHit, hasLOS, terrainHeight }, sim: (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { game.time += dt; simStep(dt); updateCamera(dt); camera.updateMatrixWorld(); } }, aoPass, renderPass, nearGrass, soldiers, inf, keys, spawnSquad, setEra: (e, r) => { era = e; titleRole = r; game.role = r; loadPlayerKind(); showTankChoice(); resetWorld(); } };
 </script>
 </body>
 </html>

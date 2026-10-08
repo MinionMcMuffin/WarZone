@@ -13,17 +13,20 @@ python3 -m http.server 8000
 
 Three.js, N8AO and postprocessing load from the jsDelivr CDN, so you need a network connection.
 
-## Eras
+## Eras and maps
 
-Each era is self-contained and has its own battlefield: sunny Italian summer for WW2, snow and falling snow for Korea, monsoon rain and red earth for Vietnam, misty autumn for the Cold War, and golden hour for Modern. Tanks, infantry weapons, uniforms, insignia, wrecks and colour grade all match the period, and nothing crosses between eras.
+Each era is self-contained and has its own map. Switching era rebuilds the world (the page reloads), and nothing crosses between eras.
 
-| Era | Your tanks | Enemy tanks | Your kit | Enemy infantry |
-| --- | --- | --- | --- | --- |
-| WW2 · 1944 | M4A3E8 Sherman, Cromwell Mk IV, Churchill Mk VII | Panzer IV Ausf. H, Panther Ausf. G, Tiger I | M1 Garand, M1A1 Bazooka | Kar98k riflemen, Panzerschreck teams |
-| Korea · 1951 | M26 Pershing, M46 Patton, M24 Chaffee | T-34-85 | M2 Carbine, M20 Super Bazooka | PVA riflemen with PPSh-41s, captured M20s |
-| Vietnam · 1968 | M48A3 Patton, Centurion Mk 5/1, M551 Sheridan | PT-76B, T-54A, T-55 | M16A1, M72 LAW | AK-47 riflemen, RPG-7 teams |
-| Cold War · 1985 | M1 Abrams, Leopard 2A4, M60A3 Patton | T-72A, T-64B, T-80B | M16A2, M47 Dragon (wire-guided) | AK-74 riflemen, RPG-7 teams |
-| Modern | M1A2 Abrams, Leopard 2A6, Challenger 2 | 2S25 Sprut-SD, T-72B3, T-80BVM, T-90M, T-14 Armata | M4A1, FGM-148 Javelin | AK-74M riflemen, RPG-7 teams |
+| Era | Map | Your vehicles | Enemy vehicles | Your kit | Enemy infantry |
+| --- | --- | --- | --- | --- | --- |
+| WW2 Italy · 1944 | Apennine valley with a hill town of tiled roofs | M4A3E8 Sherman, Cromwell Mk IV, Churchill Mk VII | Panzer IV Ausf. H, Panther Ausf. G, Tiger I | M1 Garand, M1A1 Bazooka | Kar98k riflemen, Panzerschreck teams |
+| D-Day · 1944 | Omaha Beach: land on the sand, cross the obstacle belt, take the bunkers on the bluffs and push up the draws to a Norman village; the fleet fires from offshore | M4A3E8 Sherman, Churchill Mk VII, Cromwell Mk IV | Panzer IV Ausf. H, Panther Ausf. G, Tiger I | M1 Garand, M1A1 Bazooka | MG42 bunker crews, Kar98k riflemen, Panzerschreck teams |
+| Korea · 1951 | Steep snowy mountain valley and a small village | M26 Pershing, M46 Patton, M24 Chaffee | T-34-85 | M2 Carbine, M20 Super Bazooka | PVA riflemen with PPSh-41s, captured M20s |
+| Vietnam · 1968 | Jungle hills, red earth and a village of thatched huts | M48A3 Patton, Centurion Mk 5/1, M551 Sheridan, M113 ACAV | PT-76B, T-54A, T-55 | M16A1, M72 LAW | AK-47 riflemen, RPG-7 teams |
+| Cold War · 1985 | Rolling Fulda Gap farmland and a German town | M1 Abrams, Leopard 2A4, M60A3 Patton, M2 Bradley (+ Marder 1A3 allies) | T-72A, T-64B, T-80B, BMP-1, BMP-2 | M16A2, M47 Dragon (wire-guided) | AK-74 riflemen, RPG-7 teams |
+| Modern | A city of apartment blocks and high-rises in a mountain valley | M1A2 Abrams, Leopard 2A6, Challenger 2, M2A3 Bradley (+ Warrior allies) | 2S25 Sprut-SD, T-72B3, T-80BVM, T-90M, T-14 Armata, BMP-2, BMP-3 | M4A1, FGM-148 Javelin | AK-74M riflemen, RPG-7 teams |
+
+Every building can be destroyed: shell it until it collapses, or drive a tank straight through it. IFVs fire rapid autocannons, launch anti-tank missiles and drop off a rifle squad near the enemy.
 
 ## Controls
 
@@ -36,6 +39,8 @@ Each era is self-contained and has its own battlefield: sunny Italian summer for
 | Left click | Fire the main gun |
 | Right click / Shift | Gunner's sight (zoom) |
 | Space | Coaxial machine gun |
+| F | IFV: fire a TOW missile (guided onto the crosshair) |
+| E | IFV: dismount your rifle squad |
 
 **Infantry**
 
