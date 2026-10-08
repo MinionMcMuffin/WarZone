@@ -5719,7 +5719,22 @@ addEventListener('resize', () => {
 
 const clock = new THREE.Clock();
 let wasAlive = true, farFrame = 0;
+// adaptive quality: if the frame rate sags during play, step the graphics down so the game stays playable
+const perfWatch = { acc: 0, n: 0, slow: 0, last: performance.now(), off: /noauto/.test(location.hash) };
+function watchFrameRate() {
+  const now = performance.now(), ms = now - perfWatch.last; perfWatch.last = now;
+  if (perfWatch.off || game.mode !== 'play' || document.hidden || ms > 3000) return; // ignore pauses, menus and tab switches
+  perfWatch.acc += ms; perfWatch.n++;
+  if (perfWatch.acc < 2500) return;
+  const avg = perfWatch.acc / perfWatch.n; perfWatch.acc = 0; perfWatch.n = 0;
+  perfWatch.slow = avg > 38 ? perfWatch.slow + 1 : 0; // below ~26 fps for two checks in a row
+  if (perfWatch.slow < 2) return;
+  perfWatch.slow = 0;
+  if (qualityName !== 'low') { qualityName = qualityName === 'ultra' ? 'high' : 'low'; applyQuality(); feed(`Graphics set to ${qualityName === 'high' ? 'High' : 'Low'} to keep the game smooth`, false); }
+  else if (QUALITY.low.pr > 0.65) { QUALITY.low.pr = Math.max(0.6, QUALITY.low.pr - 0.2); applyQuality(); feed('Resolution lowered to keep the game smooth', false); }
+}
 function frame() {
+  watchFrameRate();
   const dt = Math.min(clock.getDelta(), 1 / 20);
   const simDt = game.mode === 'paused' ? 0 : dt;
   game.time += simDt;
@@ -5810,7 +5825,7 @@ applyQuality();
 $('loading').hidden = true;
 setScreen('title');
 requestAnimationFrame(frame);
-window.__warzone = { cityBuildings, game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, sun, sunFar, support, _dbg: { shells, segmentHit, hasLOS, terrainHeight }, sim: (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { game.time += dt; simStep(dt); updateCamera(dt); camera.updateMatrixWorld(); } }, aoPass, renderPass, nearGrass, soldiers, inf, keys, spawnSquad, setEra: (e, r) => { era = e; titleRole = r; game.role = r; loadPlayerKind(); showTankChoice(); resetWorld(); } };
+window.__warzone = { watchFrameRate, cityBuildings, game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, sun, sunFar, support, _dbg: { shells, segmentHit, hasLOS, terrainHeight }, sim: (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { game.time += dt; simStep(dt); updateCamera(dt); camera.updateMatrixWorld(); } }, aoPass, renderPass, nearGrass, soldiers, inf, keys, spawnSquad, setEra: (e, r) => { era = e; titleRole = r; game.role = r; loadPlayerKind(); showTankChoice(); resetWorld(); } };
 </script>
 </body>
 </html>

@@ -68,4 +68,4 @@ Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons
 - Infantry squads with riflemen and anti-tank gunners, an allied fireteam, and tanks that hunt infantry with their machine guns
 - A Javelin that locks on and flies a top-attack profile, a wire-guided Dragon, and unguided LAW and Bazookas
 - Tanks can't enter the lake; infantry can wade the shallows
-- Low, High and Ultra graphics presets
+- Low, High and Ultra graphics presets, stepped down automatically if your computer can't keep a smooth frame rate
