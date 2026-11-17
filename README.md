@@ -38,6 +38,11 @@ Armour is modelled in millimetres: every gun has a penetration value that falls 
 - **Active protection.** The M1A2's Trophy and the T-14's Afghanit shoot down incoming rockets and missiles until their charges run out. Afghanit cannot reach a diving Javelin.
 - **Enemy platoons.** Enemy armour arrives in platoons of two to four with a job: assault head-on, work round a flank (scouts warn you which way), or sit back on overwatch at long range. Tanks turn their frontal armour to the threat when they halt, pick targets they can actually hurt, hold fire when a friend is in the way, and infantry squads move up behind them.
 - **You command the platoon.** `T` cycles your tanks between follow me, hold position and attack. `V` marks the enemy tank in your sights so the whole platoon engages it. `B` calls an artillery fire mission onto the ground you are aiming at (50 second reload, refused if it is danger close).
+- **Anti-tank positions.** Each wave the enemy digs in anti-tank weapons overlooking your line of advance: Pak 40s (WW2, D-Day), ZiS-3 guns (Korea), SPG-9 recoilless rifles (Vietnam), Fagot (Cold War) and Kornet (Modern) missile teams. They stay hidden until they fire, when the launch dust gives them away. Knock them out with a direct hit, artillery or air, kill the crew, or drive straight over them.
+- **Wire-guided missiles can be beaten.** Missiles from ATGM teams and helicopters fly onto you while the gunner can see you. Pop smoke between you and the launcher, or kill the gunner, and the missile loses guidance. You get a warning with a clock bearing when one is fired at you.
+- **Attack helicopters.** Hueys (Vietnam), Cobras (Cold War) and Apaches (Modern) come on station to hunt enemy armour with missiles, rockets and guns. From wave 2 the enemy can send a Mi-24 Hind (Cold War) or Ka-52 (Modern) at you. Helicopters hover off at stand-off range, climb and reposition when they can't see, and leave when they're out of ammunition or badly hit. Shoot them down with the coax, an IFV's autocannon, a main gun round or a Javelin (it locks on to helicopters); allied IFVs engage them too.
+- **FPV drones (Modern).** From wave 2, cheap one-way attack quadcopters buzz in and dive onto the thin roof armour. Listen for the whine, then shoot them down; allied IFVs help.
+- **Thermal sight** (`N`, Cold War and modern tanks). White-hot imaging: engines, crews and fires glow, the sky goes dark, and smoke and dust no longer hide anything.
 - **Enemy artillery.** From wave 2, sitting in one spot for too long brings enemy guns down on you. You get a warning and a few seconds to move.
 
 ## Controls
@@ -54,6 +59,7 @@ Armour is modelled in millimetres: every gun has a penetration value that falls 
 | 1 / 2 | Load armour-piercing or high-explosive (switching unloads the round in the breech) |
 | F | IFV: fire a TOW missile (guided onto the crosshair) |
 | X | Smoke grenades: a screen that blocks line of sight |
+| N | Thermal sight (Cold War and modern tanks) |
 | T | Platoon orders: follow me, hold position, attack |
 | V | Mark the enemy tank in your sights for the platoon |
 | B | Artillery fire mission on your aim point |
@@ -73,7 +79,7 @@ Armour is modelled in millimetres: every gun has a penetration value that falls 
 | G | Throw a grenade |
 | T / V / B | Order the tanks, mark a target, call artillery |
 
-Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons.
+Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons, including ammunition, smoke, orders, target marking, artillery and thermal.
 
 ## What's in it
 

@@ -162,6 +162,13 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
 .tbtn { position: absolute; pointer-events: auto; border-radius: 50%; border: 1px solid var(--line); background: rgba(12,17,13,0.5); color: var(--hud); font-family: var(--f-body); font-weight: 700; letter-spacing: 0.12em; font-size: 13px; display: grid; place-items: center; }
 #tFire { right: 30px; bottom: calc(160px + env(safe-area-inset-bottom, 0px)); width: 92px; height: 92px; background: rgba(240,164,58,0.35); border-color: var(--amber); }
 #tMg { right: 132px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); width: 62px; height: 62px; }
+#touch .tsm { width: 48px; height: 48px; font-size: 10px; letter-spacing: 0.06em; }
+#tAmmo { right: 120px; bottom: calc(232px + env(safe-area-inset-bottom, 0px)); }
+#tSmoke { right: 176px; bottom: calc(196px + env(safe-area-inset-bottom, 0px)); }
+#tOrd { right: 30px; bottom: calc(340px + env(safe-area-inset-bottom, 0px)); }
+#tMark { right: 86px; bottom: calc(340px + env(safe-area-inset-bottom, 0px)); }
+#tArty { right: 142px; bottom: calc(340px + env(safe-area-inset-bottom, 0px)); }
+#tTi { right: 198px; bottom: calc(340px + env(safe-area-inset-bottom, 0px)); }
 #tZoom { right: 46px; bottom: calc(266px + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; }
 
 @media (max-width: 720px) {
@@ -278,6 +285,12 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
   <div class="tbtn" id="tFire">FIRE</div>
   <div class="tbtn" id="tMg">MG</div>
   <div class="tbtn" id="tZoom">ZOOM</div>
+  <div class="tbtn tsm" id="tAmmo" data-k="ammo">AP/HE</div>
+  <div class="tbtn tsm" id="tSmoke" data-k="KeyX">SMK</div>
+  <div class="tbtn tsm" id="tOrd" data-k="KeyT">ORD</div>
+  <div class="tbtn tsm" id="tMark" data-k="KeyV">MARK</div>
+  <div class="tbtn tsm" id="tArty" data-k="KeyB">ARTY</div>
+  <div class="tbtn tsm" id="tTi" data-k="KeyN">TI</div>
 </div>
 
 <div id="loadMap" hidden style="position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:rgba(10,12,10,0.82);color:#e8e2c8;font:600 22px/1.2 'Barlow Condensed',sans-serif;letter-spacing:0.12em">MOVING TO THE NEW FRONT…</div>
@@ -318,6 +331,7 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
       <kbd>1 / 2</kbd><span>Load armour-piercing or high-explosive</span>
       <kbd>F / E</kbd><span>IFVs: fire a TOW missile · dismount your squad</span>
       <kbd>X</kbd><span>Smoke grenades (block enemy sight)</span>
+      <kbd>N</kbd><span>Thermal sight (Cold War and modern tanks): sees through smoke</span>
       <kbd>T</kbd><span>Platoon orders: follow me · hold position · attack</span>
       <kbd>V</kbd><span>Mark the tank in your sights for the whole platoon</span>
       <kbd>B</kbd><span>Call an artillery fire mission where you are aiming</span>
@@ -2960,7 +2974,7 @@ for (const k in KINDS) { const a = ARMOUR[k] || [100, 40, 30, 150]; KINDS[k].arm
 // explosive reactive armour bricks and hard-kill active protection
 const STAB = { ww2: 0.05, dday: 0.05, korea: 0.2, vietnam: 0.45, coldwar: 0.85, modern: 1 };
 const RACK = { t72: 1.7, t72a: 1.7, t64b: 1.7, t80: 1.7, t80b: 1.7, t90: 1.4, t54: 1.2, t55: 1.2, t3485: 1.2, pz4: 1.1, sherman: 0.7, abrams: 0.25, m1ip: 0.3, leopard: 0.6, leo2a4: 0.6, challenger: 0.5, t14: 0.3 };
-for (const k in KINDS) { const K = KINDS[k]; K.stab = k === 'centurion' ? 0.7 : k === 'sherman' ? 0.2 : STAB[K.era] ?? 0.5; K.rack = RACK[k] ?? (K.cls === 'ifv' ? 0.6 : 1); }
+for (const k in KINDS) { const K = KINDS[k]; K.thermal = K.team === 'blue' && (K.era === 'coldwar' || K.era === 'modern') && !K.ac; K.stab = k === 'centurion' ? 0.7 : k === 'sherman' ? 0.2 : STAB[K.era] ?? 0.5; K.rack = RACK[k] ?? (K.cls === 'ifv' ? 0.6 : 1); }
 for (const k of ['t72', 't80', 't90', 't64b', 't80b']) KINDS[k].reactive = true; // Kontakt / Relikt bricks
 KINDS.t14.aps = 2; KINDS.abrams.aps = 3; // Afghanit and Trophy
 const newMods = () => ({ track: 0, fire: 0, turret: 0, crew: 0, engine: 0, gun: 0 });
@@ -3009,6 +3023,8 @@ function spotFromPlayer(dt) {
   if ((spotT -= dt) > 0) return; spotT = 0.4;
   const pe = playerEnt(); if (!pe?.alive) return;
   const eye = _v3.set(pe.pos.x, pe.pos.y + (pe.isSoldier ? pe.height() : 2.8 * pe.size), pe.pos.z), c = new THREE.Vector3();
+  for (const e of emplacements) if (e.alive && e.pos.distanceTo(pe.pos) < (game.thermal ? 700 : 380) && hasLOS(eye, c.copy(e.pos))) e.spottedT = game.time;
+  for (const a of air) if (a.alive && a.team === 'red' && a.pos.distanceTo(pe.pos) < (a.isDrone ? 300 : 1600)) a.spottedT = game.time;
   for (const list of [tanks, soldiers]) for (const e of list) {
     if (!e.alive || e.team !== 'red' || e.pos.distanceTo(pe.pos) > (e.isSoldier ? 300 : 650)) continue;
     if (e.isSoldier) e.center(c); else c.set(e.pos.x, e.pos.y + 1.6 * e.size, e.pos.z);
@@ -3299,6 +3315,7 @@ class Tank {
       } else {
         const ox = this.pos.x - c.x, oz = this.pos.z - c.z;
         const lx = ox * c.cos - oz * c.sin, lz = ox * c.sin + oz * c.cos; // world -> box local
+        if (c.gun) { if (Math.abs(lx) < c.hw + R0 && Math.abs(lz) < c.hd + R0 && this.team !== 'red') { if (Math.abs(this.speed) > 1) { hitEmplacement(c.gun, this); for (const s of soldiers) if (s.empCrew === c.gun && s.alive && s.pos.distanceTo(this.pos) < 5) s.damage(500, this); this.speed *= 0.85; if (this.isPlayer) addShake(0.4); continue; } } else if (Math.abs(lx) > c.hw + R0 || Math.abs(lz) > c.hd + R0) continue; }
         // armour ploughs straight through buildings (the AI only through low ones)
         if (c.building?.alive && Math.abs(this.speed) > 1.2 && (this.isPlayer || c.building.floors <= 3) && Math.abs(lx) < c.hw + R0 && Math.abs(lz) < c.hd + R0) { collapseBuilding(c.building, this); this.speed *= 0.7; if (this.isPlayer) addShake(0.6); continue; }
         const px = clamp(lx, -c.hw, c.hw), pz = clamp(lz, -c.hd, c.hd);
@@ -3583,6 +3600,7 @@ function segmentHit(a, b, owner, skipTrees = false) {
   }
   for (const c of queryColliders((a.x + b.x) / 2, (a.z + b.z) / 2, len / 2 + 2)) {
     if (c.type === 'obb') {
+      if (c.gun && c.gun === owner) continue;
       const ox = a.x - c.x, oz = a.z - c.z;
       const lx = ox * c.cos - oz * c.sin, lz = ox * c.sin + oz * c.cos;
       const ldx = dx * c.cos - dz * c.sin, ldz = dx * c.sin + dz * c.cos;
@@ -3609,6 +3627,13 @@ function segmentHit(a, b, owner, skipTrees = false) {
     if (above < 0) { const tt = prevT + (t - prevT) * (prevAbove / (prevAbove - above)); consider(tt, terrainHeight(x, z) < waterAt(x, z) ? 'water' : 'ground'); break; }
     prevT = t; prevAbove = above;
   }
+  if (typeof air !== 'undefined') for (const h of air) {
+    if (!h.alive || h === owner || (owner && owner.team === h.team)) continue;
+    const L2 = dx * dx + dy * dy + dz * dz; if (L2 < 1e-9) continue;
+    const tt = clamp(((h.pos.x - a.x) * dx + (h.pos.y - a.y) * dy + (h.pos.z - a.z) * dz) / L2, 0, 1);
+    const r = h.isDrone ? 0.9 : 2.6;
+    if (Math.hypot(a.x + dx * tt - h.pos.x, a.y + dy * tt - h.pos.y, a.z + dz * tt - h.pos.z) < r) consider(tt, 'air', { air: h });
+  }
   if (typeof soldiers !== 'undefined') for (const sd of soldiers) {
     if (!sd.alive || sd === owner) continue;
     const L2 = dx * dx + dz * dz; if (L2 < 1e-9) continue;
@@ -3627,11 +3652,13 @@ const player = { tank: null };
 function impact(s, hit) {
   const p = hit.point, mg = s.mg;
   if (s.kind === 'rocket') { rocketImpact(s, hit); return false; }
+  if (hit.type === 'air') { airHit(hit.air, s, p); if (!mg) particles.explosion(p, s.ac ? 0.35 : 0.8, false); return false; }
   if (hit.type === 'soldier') { soldierImpact(s, hit); return false; }
   const ac = !!s.ac, he = !!s.he, oldGun = era === 'ww2' || era === 'dday' || era === 'korea';
   // HE bursts wide; armour-piercing shot carries little or no filler
   if (!mg && hit.type !== 'tank') splashDamage(p, ac ? (he ? 4.5 : 2) : he ? 10 : oldGun ? 5 : 3, ac ? (he ? 60 : 25) : he ? 170 : oldGun ? 100 : 50, s.owner);
   if (hit.coll?.building) damageBuilding(hit.coll.building, mg ? 0.5 : (ac ? 4 : 35) * (he ? 2.5 : 1), p, s.owner);
+  if (hit.coll?.gun && !mg && s.owner?.team !== 'red') hitEmplacement(hit.coll.gun, s.owner, ac ? 0.2 : 1);
   if (hit.type === 'tank') {
     const tk = hit.tank;
     // ricochet on very oblique hits
@@ -3783,6 +3810,13 @@ const sfx = (() => {
     ricochet(pos) { if (!ok()) return; const t = ctx.currentTime, { g } = chain(pos, 0.9); const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(2600, t); o.frequency.exponentialRampToValueAtTime(700, t + 0.5); const gg = ctx.createGain(); gg.gain.setValueAtTime(0.25, t); gg.gain.exponentialRampToValueAtTime(0.001, t + 0.5); o.connect(gg); gg.connect(g); o.start(t); o.stop(t + 0.55); noise(g, t, 0.15, 'highpass', 3000, 2000); },
     rifle(pos, auto) { if (!ok()) return; const t = ctx.currentTime, { g } = chain(pos, pos ? 0.7 : 0.55); noise(g, t, auto ? 0.09 : 0.16, 'bandpass', 3200, 700, 0.9); thump(g, t, 160, 50, auto ? 0.08 : 0.14, pos ? 0.4 : 0.7); },
     rocket(pos) { if (!ok()) return; const t = ctx.currentTime, { g } = chain(pos, 0.9); noise(g, t, 0.9, 'bandpass', 900, 260, 0.6); thump(g, t, 90, 40, 0.3, 0.8); },
+    rotor(pos, k = 1) { if (!ok()) return; const t = ctx.currentTime, { g } = chain(pos, 0.9 * k); noise(g, t, 0.075, 'lowpass', 300, 90, 0.8); thump(g, t, 74, 46, 0.08, 0.7); },
+    drone(pos) {
+      if (!ok()) return; const t = ctx.currentTime, { g } = chain(pos, 0.5), o = ctx.createOscillator(), f = ctx.createBiquadFilter(), og = ctx.createGain();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(rr(185, 235), t); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.7;
+      og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.5, t + 0.03); og.gain.linearRampToValueAtTime(0.0001, t + 0.19);
+      o.connect(f); f.connect(og); og.connect(g); o.start(t); o.stop(t + 0.21);
+    },
     incoming(sec) { // the falling whistle of a shell on its way in
       if (!ok()) return; const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
       o.type = 'sine'; o.frequency.setValueAtTime(2100, t); o.frequency.exponentialRampToValueAtTime(520, t + sec);
@@ -3889,10 +3923,10 @@ composer.addPass(new OutputPass());
 const smaa = new SMAAPass(innerWidth, innerHeight);
 composer.addPass(smaa);
 const grade = new ShaderPass({
-  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, damage: { value: 0 }, supp: { value: 0 }, scope: { value: 0 }, res: { value: new THREE.Vector2(innerWidth, innerHeight) }, eraTint: { value: new THREE.Vector3(1, 1, 1) }, eraSat: { value: 1 } },
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, damage: { value: 0 }, supp: { value: 0 }, scope: { value: 0 }, thermal: { value: 0 }, res: { value: new THREE.Vector2(innerWidth, innerHeight) }, eraTint: { value: new THREE.Vector3(1, 1, 1) }, eraSat: { value: 1 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float time, damage, supp, scope, eraSat; uniform vec2 res; uniform vec3 eraTint; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float time, damage, supp, scope, thermal, eraSat; uniform vec2 res; uniform vec3 eraTint; varying vec2 vUv;
     void main(){
       vec2 c = vUv - 0.5;
       float ca = 0.0012 + damage * 0.01;
@@ -3913,6 +3947,15 @@ const grade = new ShaderPass({
       col += vec3(-0.012, 0.0, 0.018) * (1.0 - smoothstep(0.0, 0.45, l)) + vec3(0.02, 0.008, -0.015) * smoothstep(0.5, 1.0, l);
       col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, eraSat) * eraTint;
       col = (col - 0.5) * 1.08 + 0.5;
+      // thermal imager: white hot. Heat sources are drawn into the scene as saturated red, the cold sky goes dark
+      if (thermal > 0.001) {
+        float tl = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        float hot = clamp((col.r - max(col.g, col.b) * 1.15) * 2.4, 0.0, 1.0);
+        float sky = clamp((col.b - col.r) * 5.0, 0.0, 1.0) * smoothstep(0.3, 0.6, tl);
+        float th = 0.08 + 0.4 * tl * (1.0 - sky * 0.9) + hot;
+        float scan = 0.97 + 0.03 * sin(vUv.y * res.y * 1.6);
+        col = mix(col, clamp(vec3(th) * vec3(0.92, 1.0, 0.95) * scan, 0.0, 1.0), thermal);
+      }
       float vig = smoothstep(0.95, 0.3, length(c * vec2(1.15, 1.0)));
       col *= mix(1.0, vig, 0.4);
       col = mix(col, col * vec3(0.85, 1.0, 0.86) * 1.05, scope);
@@ -4115,6 +4158,19 @@ function drawRadar(dt) {
     rctx.fillStyle = !t.alive ? 'rgba(223,230,207,0.35)' : t.team === 'red' ? '#ea4a3a' : '#7fb8ff';
     rctx.beginPath(); rctx.moveTo(0, -9); rctx.lineTo(6, 7); rctx.lineTo(-6, 7); rctx.closePath(); rctx.fill(); rctx.restore();
   }
+  for (const e of emplacements) {
+    const vis = seen(e); if (vis <= 0) continue; rctx.globalAlpha = vis;
+    const [x, y] = toR(e.pos.x, e.pos.z); if (Math.hypot(x, y) > R0 - 6) continue;
+    rctx.strokeStyle = e.alive ? '#ea4a3a' : 'rgba(223,230,207,0.35)'; rctx.lineWidth = 2; rctx.strokeRect(x - 5, y - 5, 10, 10);
+  }
+  for (const a of air) {
+    if (!a.alive) continue;
+    const vis = seen(a); if (vis <= 0) continue; rctx.globalAlpha = vis;
+    let [x, y] = toR(a.pos.x, a.pos.z); const d = Math.hypot(x, y); if (d > R0 - 6) { x *= (R0 - 6) / d; y *= (R0 - 6) / d; }
+    rctx.strokeStyle = a.team === 'red' ? '#ea4a3a' : '#7fb8ff'; rctx.lineWidth = 2;
+    if (a.isDrone) { rctx.beginPath(); rctx.moveTo(x - 4, y - 4); rctx.lineTo(x + 4, y + 4); rctx.moveTo(x + 4, y - 4); rctx.lineTo(x - 4, y + 4); rctx.stroke(); }
+    else { rctx.beginPath(); rctx.moveTo(x - 9, y); rctx.lineTo(x + 9, y); rctx.moveTo(x, y - 7); rctx.lineTo(x, y + 7); rctx.stroke(); rctx.beginPath(); rctx.arc(x, y, 3, 0, 6.28); rctx.stroke(); }
+  }
   for (const sd of soldiers) {
     if (sd.isPlayer || !sd.alive) continue;
     const vis = seen(sd); if (vis <= 0) continue; rctx.globalAlpha = vis;
@@ -4193,6 +4249,12 @@ if (isTouch) {
   renderer.domElement.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; if (t.clientX > innerWidth * 0.35 && touch.aim === null) { touch.aim = t.identifier; touch.ax = t.clientX; touch.ay = t.clientY; } }, { passive: true });
   const hold = (id, key) => { const el = $(id); el.addEventListener('touchstart', (e) => { touch[key] = true; e.preventDefault(); e.stopPropagation(); }, { passive: false }); el.addEventListener('touchend', () => { touch[key] = false; }); };
   hold('tFire', 'fire'); hold('tMg', 'mg');
+  // command buttons press the matching key for as long as they are held
+  for (const el of document.querySelectorAll('#touch .tsm')) {
+    const press = (on) => { let k = el.dataset.k; if (k === 'ammo') k = game.ammoType === 'AP' ? 'Digit2' : 'Digit1'; if (on) { el._k = k; keys[k] = true; } else if (el._k) keys[el._k] = false; };
+    el.addEventListener('touchstart', (e) => { press(true); e.preventDefault(); e.stopPropagation(); }, { passive: false });
+    el.addEventListener('touchend', () => press(false)); el.addEventListener('touchcancel', () => press(false));
+  }
   $('tZoom').addEventListener('touchstart', (e) => { cam.zoomToggle = !cam.zoomToggle; e.preventDefault(); }, { passive: false });
 }
 
@@ -4283,6 +4345,12 @@ function nextWave() {
   game.toSpawn = B.tanks(game.wave, onFoot);
   game.squadsToSpawn = B.squads(game.wave, onFoot); game.squadT = battleName === 'epic' ? 0.5 : 3;
   game.spawnT = 1.5;
+  // dug-in anti-tank weapons, enemy helicopters and drones
+  for (let i = emplacements.length - 1; i >= 0; i--) if (!emplacements[i].alive) { scene.remove(emplacements[i].v.root); emplacements.splice(i, 1); }
+  const empN = Math.min({ standard: 1, large: 2, massive: 3, epic: 4 }[battleName] + Math.floor(game.wave / 3), 6) - emplacements.filter((e) => e.alive).length;
+  for (let i = 0; i < empN; i++) spawnEmplacement();
+  if (HELI[era]?.red && game.wave >= 2 && Math.random() < 0.3 + game.wave * 0.12) game.redHeliT = rr(20, 45);
+  if (era === 'modern' && game.wave >= 2) { game.droneQ = Math.round(Math.min(1 + game.wave, 7) * (battleName === 'standard' ? 1 : 1.5)); game.droneT = rr(10, 20); }
   const names = [...new Set(Array.from({ length: 6 }, () => KINDS[pickEnemyKind(game.wave)].name))].slice(0, 3).join(' · ');
   bigMsg(`WAVE ${game.wave}`, `${game.toSpawn} tanks and ${game.squadsToSpawn} infantry squads inbound · ${names}`, 3.4);
 }
@@ -4328,6 +4396,8 @@ function ballisticElev(dx, dy, v) {
   if (disc < 0) return Math.PI / 4;
   return Math.atan((v2 - Math.sqrt(disc)) / (g * dx));
 }
+// how fast this tank's round leaves the muzzle: autocannons are far faster, HE slower than AP
+function muzzleVel(t) { return t.K.ac ? 1050 : SHELL_SPEED * (t.isPlayer && game.ammoType === 'HE' ? 0.82 : 1); }
 function aimTurret(t, target, dt, traverse = 1.05, elevRate = 0.55) {
   if (t.mods?.turret > 0) traverse *= 0.3; // jammed ring: cranking it round by hand
   const local = _v1.copy(target).applyMatrix4(t.inv);
@@ -4339,7 +4409,7 @@ function aimTurret(t, target, dt, traverse = 1.05, elevRate = 0.55) {
   t.turretYaw = wrapAngle(t.turretYaw + step);
   t.turretRate = step / Math.max(dt, 1e-4) / traverse;
   const horiz = Math.max(1, Math.hypot(local.x, local.z));
-  const el = clamp(ballisticElev(horiz, local.y, SHELL_SPEED), -0.14, 0.35);
+  const el = clamp(ballisticElev(horiz, local.y, muzzleVel(t)), -0.14, 0.35);
   t.gunElev = approach(t.gunElev, el, elevRate * dt);
   return Math.abs(diff) + Math.abs(el - t.gunElev);
 }
@@ -4351,6 +4421,14 @@ function pickFoe(t) {
     if (!o.alive || o.team === t.team) continue;
     let d = t.pos.distanceTo(o.pos); if (d > 230) continue; d *= o.isPlayer ? 1.0 : 1.4;
     if (d < bd) { bd = d; best = o; }
+  }
+  if (t.team === 'blue') for (const e of emplacements) {
+    if (!e.alive || game.time - e.spottedT > 25 || !empCrew(e)) continue;
+    const d = t.pos.distanceTo(e.pos) * 0.8; if (d < bd && d < 700) { bd = d; best = e; }
+  }
+  if (t.K.ac) for (const a of air) {
+    if (!a.alive || a.team === t.team) continue;
+    const d = t.pos.distanceTo(a.pos) * (a.isDrone ? 0.4 : 0.3); if (d < bd && t.pos.distanceTo(a.pos) < (a.isDrone ? 260 : 1000)) { bd = d; best = a; }
   }
   for (const o of tanks) {
     if (!o.alive || o.team === t.team) continue;
@@ -4387,7 +4465,7 @@ function updateAI(t, dt) {
   const foe = ai.foe, lead = playerEnt();
   const following = t.team === 'blue' && lead?.alive && !(game.order === 'attack' && foe);
   if (!foe && !following) { t.input.throttle = 0; t.input.steer = 0; return; }
-  const ref = foe || lead;
+  const ref = (foe?.air ? lead || foe : foe) || lead;
   const dist = Math.hypot(ref.pos.x - t.pos.x, ref.pos.z - t.pos.z);
   // carriers drop their squad off once the enemy is close
   if (t.K.carry && !t.dismounted && foe && Math.hypot(foe.pos.x - t.pos.x, foe.pos.z - t.pos.z) < 200) { t.dismounted = true; dismountSquad(t); }
@@ -4442,12 +4520,12 @@ function updateAI(t, dt) {
   // gunnery
   if (!foe) { aimTurret(t, _v2.copy(t.pos).addScaledVector(t.forward(_v3), 50).setY(t.pos.y + 2), dt, 0.75, 0.4); return; }
   const fd = Math.hypot(foe.pos.x - t.pos.x, foe.pos.z - t.pos.z);
-  const tgt = _v2.copy(foe.pos); tgt.y += 1.5 * foe.size;
+  const tgt = _v2.copy(foe.pos); tgt.y += foe.air ? 0 : 1.5 * foe.size;
   const lt = fd / SHELL_SPEED, pf = foe.forward(new THREE.Vector3());
   tgt.x += pf.x * foe.speed * lt * 0.8; tgt.z += pf.z * foe.speed * lt * 0.8;
   const err = aimTurret(t, tgt.clone(), dt, 0.75, 0.4);
   const mz = t.muzzleWorld(new THREE.Vector3());
-  const los = fd < 340 && hasLOS(mz, _v1.copy(foe.pos).setY(foe.pos.y + 1.6 * foe.size));
+  const los = fd < (foe.air ? 900 : foe.isEmp ? 650 : 340) && hasLOS(mz, _v1.copy(foe.pos).setY(foe.pos.y + (foe.air ? 0 : 1.6 * foe.size)));
   ai.los = los ? ai.los + dt : 0;
   if (los && t.team === 'blue') foe.spottedT = game.time;
   if (foe.isSoldier) {
@@ -4466,7 +4544,7 @@ function updateAI(t, dt) {
   }
   // missile carriers open up on tanks from range
   t.towT = (t.towT ?? rr(4, 10)) - dt;
-  if (t.K.tow && t.towT <= 0 && los && fd > 60 && fd < 650 && err < 0.12 && ai.los > 1) { t.towT = rr(14, 22) * (t.team === 'red' ? EASE.enemyReload : 1); fireTOW(t, tgt.clone()); }
+  if (t.K.tow && !foe.air && t.towT <= 0 && los && fd > 60 && fd < 650 && err < 0.12 && ai.los > 1) { t.towT = rr(14, 22) * (t.team === 'red' ? EASE.enemyReload : 1); fireTOW(t, tgt.clone()); }
   if (los && !t.K.ac && t.K.stab < 0.8 && t.reload < 0.8 && err < 0.15 && fd > 40 && !t.floating && ai.reverseT <= 0) { t.input.throttle = 0; t.input.steer = faceFoe; } // short halt to shoot: only stabilised guns fire on the move
   if (los && err < (t.K.ac ? 0.05 : 0.03) && t.reload <= 0 && ai.los > ai.fireDelay && foe.alive && !friendInLine(t, foe)) t.fire();
 }
@@ -4495,6 +4573,8 @@ function updatePlayer(dt) {
     game.eHeld = !!keys.KeyE;
     if (keys.KeyX && !game.xHeld) { if (game.smoke > 0) { popSmoke(t); game.smoke--; feed(`Smoke out · ${game.smoke} salvo${game.smoke === 1 ? '' : 's'} left`, false); } else feed('No smoke left until the next wave', true); }
     game.xHeld = !!keys.KeyX;
+    if (keys.KeyN && !game.nHeld) { if (t.K.thermal) { game.thermal = !game.thermal; feed(game.thermal ? 'Thermal sight · white hot' : 'Day sight', false); sfx.beep(false); } else feed(`No thermal sight on the ${t.K.name}`, true); }
+    game.nHeld = !!keys.KeyN;
     const th = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) + touch.throttle;
     const st = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0) + touch.steer;
     t.input.throttle = clamp(th, -1, 1); t.input.steer = clamp(st, -1, 1);
@@ -4661,7 +4741,7 @@ function updateCamera(dt) {
 // Predicted impact of the gun as currently laid (shown as the circle reticle)
 const _pp = new THREE.Vector3(), _pv = new THREE.Vector3(), _pprev = new THREE.Vector3();
 function predictImpact(t) {
-  t.muzzleWorld(_pp); t.barrelDir(_pv).multiplyScalar(SHELL_SPEED);
+  t.muzzleWorld(_pp); t.barrelDir(_pv).multiplyScalar(muzzleVel(t));
   const step = 1 / 30;
   for (let i = 0; i < 200; i++) {
     _pprev.copy(_pp); _pv.y -= GRAVITY * step; _pp.addScaledVector(_pv, step);
@@ -5062,7 +5142,7 @@ const rocketGeo = merge([new THREE.CylinderGeometry(0.05, 0.05, 0.9, 8).rotateX(
 const rocketMat = new THREE.MeshStandardMaterial({ color: 0x3e4232, roughness: 0.6, metalness: 0.3 });
 function fireRocket(from, dir, owner, spec, target) {
   const mesh = new THREE.Mesh(rocketGeo, rocketMat); mesh.position.copy(from); scene.add(mesh);
-  shells.list.push({ p: from.clone(), v: dir.clone().multiplyScalar(spec.lock ? 25 : spec.saclos ? spec.speed * 0.5 : spec.speed), owner, mg: false, kind: 'rocket', life: 9, mesh, ric: 1, spec, target, climb: !!target, launchY: from.y, age: 0, dist0: target ? Math.hypot(target.pos.x - from.x, target.pos.z - from.z) : 0 });
+  shells.list.push({ p: from.clone(), v: dir.clone().multiplyScalar(spec.lock ? 25 : spec.saclos ? spec.speed * 0.5 : spec.speed), owner, mg: false, kind: 'rocket', life: 9, mesh, ric: 1, spec, target, climb: !!target && !spec.direct && !target.air, launchY: from.y, age: 0, dist0: target ? Math.hypot(target.pos.x - from.x, target.pos.z - from.z) : 0 });
   sfx.rocket(from);
   for (let i = 0; i < 14; i++) smokePool.emit({ x: from.x - dir.x * 1.2, y: from.y - dir.y * 1.2, z: from.z - dir.z * 1.2, vx: -dir.x * rr(4, 12) + rr(-1, 1), vy: rr(-0.5, 1.5), vz: -dir.z * rr(4, 12) + rr(-1, 1), life: rr(1, 2.4), s0: 0.6, s1: rr(2.5, 4), c0: [0.75, 0.73, 0.7, 0.55], c1: [0.85, 0.83, 0.8, 0], drag: 2.2 }); // backblast
 }
@@ -5107,7 +5187,7 @@ function playerBailOut(t) {
   resetInfantryKit(); inf.reserve = Math.floor(inf.reserve / 3); inf.at = Math.min(inf.at, 1); inf.nades = 1;
   cam.pitch = 0; cam.zoom = false; cam.zoomToggle = false; mouse.fire = mouse.pressed = false;
   for (const a of [...dmgDirs.children]) a.remove();
-  game.bailed = true;
+  game.bailed = true; game.thermal = false;
   bigMsg('KNOCKED OUT', 'You bailed out · fight on foot', 3.2);
   feed(`${t.K.name} lost · you are on foot with a ${GUNS[ERA_INF[era].gun].name}`, true);
 }
@@ -5126,8 +5206,11 @@ function steerRocket(s, dt) {
   } else if (spec.tow && s.owner?.isPlayer && s.owner.alive && player.tank === s.owner) {
     // wire-guided: fly onto wherever the gunner's crosshair is
     dir.lerp(_towV.copy(cam.aim).sub(s.p).normalize(), Math.min(1, dt * 4)).normalize();
+  } else if (s.target && s.target.alive && s.spec.direct && s.owner && (!s.owner.alive || (s.owner.isEmp && !empCrew(s.owner)) || (smokeScreens.length && smokeBlocks(s.owner.pos, s.target.pos)))) {
+    // the gunner is dead or blinded by smoke: the missile flies on unguided
+    s.target = null; if (s.owner.isEmp || s.owner.isHeli) feed('Missile lost guidance', false);
   } else if (s.target && s.target.alive) {
-    const tg = new THREE.Vector3(s.target.pos.x, s.target.pos.y + 1.6 * s.target.size, s.target.pos.z);
+    const tg = new THREE.Vector3(s.target.pos.x, s.target.pos.y + (s.target.air ? 0 : 1.6 * s.target.size), s.target.pos.z);
     const hx = tg.x - s.p.x, hz = tg.z - s.p.z, h = Math.hypot(hx, hz);
     // top-attack profile: climb to an apex that scales with range, then dive steeply onto the roof
     const apex = clamp(s.dist0 * 0.3, 15, 120);
@@ -5152,6 +5235,8 @@ function splashDamage(p, radius, maxDmg, owner) {
 }
 function rocketImpact(s, hit) {
   const p = hit.point;
+  if (hit.type === 'air') { particles.explosion(p, 1.0, false); sfx.explosion(p, 1.0); airHit(hit.air, s, p); return; }
+  if (hit.coll?.gun && s.owner?.team !== 'red') hitEmplacement(hit.coll.gun, s.owner);
   particles.explosion(p, 0.9, hit.type === 'ground');
   if (hit.type === 'ground') decals.place(p.x, p.z, 2.8);
   if (hit.type === 'tree') knockTree(hit.coll.tree, s.v.x, s.v.z);
@@ -5171,7 +5256,7 @@ function rocketImpact(s, hit) {
   const wasAlive = tk.alive;
   tk.damage(dmg, s.owner, p, ar.through && rackHit(tk, how, top));
   if (s.owner?.isPlayer) { showHitmark(); if (wasAlive && !tk.alive) onKill(tk); else feed(`${ar.through ? 'Penetration' : 'No penetration'} · ${tk.K.name} · ${how}${mods.length ? ' · ' + mods.join(', ') : ''}`, !ar.through); }
-  else if (wasAlive && !tk.alive) feed(tk.team === 'red' ? `${tk.K.name} destroyed by infantry` : `${tk.K.name} lost to an ${ERA_INF[era].redAT}`, tk.team !== 'red');
+  else if (wasAlive && !tk.alive) feed(tk.team === 'red' ? `${tk.K.name} destroyed by ${s.owner?.isSoldier || !s.owner?.K ? 'infantry' : withArticle(s.owner.K.name)}` : `${tk.K.name} lost to ${s.owner?.isSoldier || !s.owner?.K ? withArticle(ERA_INF[era].redAT) : withArticle(s.owner.K.name)}`, tk.team !== 'red');
   if (tk.isPlayer) onPlayerHit(s.owner, dmg);
 }
 function soldierImpact(s, hit) {
@@ -5565,6 +5650,12 @@ function updateSupport(dt) {
   if (game.mode === 'play' && pe) {
     support.airT -= dt; support.artT -= dt;
     if (support.airT <= 0) { support.airT = battleName === 'massive' ? rr(30, 50) : rr(45, 75); launchAirStrike(); }
+    if (HELI[era]?.blue && (support.heliT -= dt) <= 0) {
+      support.heliT = rr(80, 120) * (battleName === 'standard' ? 1.2 : 1);
+      const n = battleName === 'standard' ? 1 : 2; let h;
+      for (let i = 0; i < n; i++) h = spawnHeli('blue');
+      if (h) feed(`Gunships on station · ${h.H.name}${n > 1 ? 's' : ''}`, false);
+    }
     if (support.artT <= 0 && !support.barrage) {
       support.artT = battleName === 'massive' ? rr(8, 16) : rr(14, 26);
       // friendly guns on enemy positions when it is safe, otherwise a barrage landing out on the far hills
@@ -5614,6 +5705,7 @@ function updateSupport(dt) {
       splashDamage(p, 16, 260, BLUE_FIRES);
       for (const t of tanks) if (t.alive && t.team === 'red' && t.pos.distanceTo(p) < 9) { t.damage(t.pos.distanceTo(p) < 4 ? 200 : 70, null, p); if (!t.alive) feed(`${t.K.name} destroyed from the air`, false); }
       for (const sd of soldiers) if (sd.alive && sd.pos.distanceTo(p) < 40) sd.supp = 2;
+      for (const e of emplacements) if (e.alive && e.pos.distanceTo(p) < 10) hitEmplacement(e, null);
       scene.remove(bm.m); support.bombs.splice(i, 1);
     }
   }
@@ -5640,6 +5732,7 @@ function barrageTick(b, dt) {
         if (was && !t.alive && t.team === 'red') { if (b.mine) onKill(t); else feed(`${t.K.name} knocked out by artillery`, false); }
       }
       for (const sd of soldiers) if (sd.alive && sd.pos.distanceTo(p) < 25) sd.supp = Math.min(2, sd.supp + 1.2);
+      if (!b.red) for (const e of emplacements) if (e.alive && e.pos.distanceTo(p) < 5) hitEmplacement(e, b.mine ? playerEnt() : null);
     }
   }
   return b.n <= 0;
@@ -5649,9 +5742,489 @@ const _yAxis = new THREE.Vector3(0, 1, 0);
 function resetSupport() {
   support.missions.length = 0;
   for (const pl of support.planes) scene.remove(pl.root); for (const bm of support.bombs) scene.remove(bm.m);
-  support.planes.length = 0; support.bombs.length = 0; support.barrage = null; support.airT = rr(25, 40); support.artT = rr(10, 18);
+  support.planes.length = 0; support.bombs.length = 0; support.barrage = null; support.airT = rr(25, 40); support.artT = rr(10, 18); support.heliT = rr(40, 70);
   support.plumes.length = 0;
   for (let i = 0; i < 4; i++) { const a = rr(0, 6.28), r = rr(650, 950), x = Math.cos(a) * r, z = Math.sin(a) * r; support.plumes.push({ x, y: terrainHeight(x, z), z }); }
+}
+
+// =====================================================================
+// Anti-tank emplacements, attack helicopters and drones
+// =====================================================================
+// dug-in anti-tank weapons on the enemy side: towed guns in the early eras, a recoilless rifle in Vietnam, wire-guided
+// missile teams later. Hidden until they fire; knock them out with a direct hit, kill the crew, or drive over them.
+const AT_EMP = {
+  ww2: { name: 'Pak 40 anti-tank gun', kind: 'gun', pen: 140, col: 0x7d7048, reload: 7, range: 700 },
+  korea: { name: 'ZiS-3 76 mm gun', kind: 'gun', pen: 100, col: 0x5f6143, reload: 6.5, range: 650 },
+  vietnam: { name: 'SPG-9 recoilless rifle', kind: 'rr', pen: 330, col: 0x4c5636, reload: 9, range: 480, speed: 140, dmg: 34 },
+  coldwar: { name: '9K111 Fagot ATGM team', kind: 'atgm', pen: 480, col: 0x5d6040, reload: 16, range: 1100, speed: 115, dmg: 44 },
+  modern: { name: '9M133 Kornet ATGM team', kind: 'atgm', pen: 1100, col: 0x5a5a48, reload: 15, range: 1300, speed: 135, dmg: 52 },
+};
+AT_EMP.dday = AT_EMP.ww2;
+const emplacements = [];
+const EMP_CACHE = {};
+function empVisual(E) {
+  if (!EMP_CACHE[E.kind + E.col]) {
+    const C = new THREE.Color(E.col), D = new THREE.Color(0x2b2b26), W = new THREE.Color(0x3a3a33);
+    const col = (g, c) => paintGeo(g, (cc) => cc.copy(c));
+    const base = [], yaw = [], pitch = [];
+    if (E.kind === 'gun') {
+      for (const s of [-1, 1]) {
+        base.push(col(new THREE.BoxGeometry(0.16, 0.16, 3.0).translate(0, 0, -1.5).rotateY(s * 0.32).translate(s * 0.25, 0.32, -0.1), C));
+        base.push(col(new THREE.CylinderGeometry(0.46, 0.46, 0.2, 14).rotateZ(Math.PI / 2).translate(s * 0.98, 0.46, 0), W));
+        base.push(col(new THREE.BoxGeometry(0.1, 0.1, 0.35).translate(s * 0.25 + s * Math.sin(0.32) * 2.9, 0.12, -0.1 - Math.cos(0.32) * 2.9), D)); // spade
+      }
+      base.push(col(new THREE.BoxGeometry(1.9, 0.14, 0.18).translate(0, 0.46, 0), D));
+      for (const s of [-1, 1]) yaw.push(col(new THREE.BoxGeometry(0.95, 1.05, 0.05).rotateX(-0.12).rotateY(s * 0.22).translate(s * 0.48, 0.95, 0.38), C));
+      yaw.push(col(new THREE.BoxGeometry(0.4, 0.35, 1.2).translate(0, 0.7, -0.05), C));
+      pitch.push(col(new THREE.CylinderGeometry(0.055, 0.075, 3.4, 10).rotateX(Math.PI / 2).translate(0, 0, 1.6), C));
+      pitch.push(col(new THREE.BoxGeometry(0.24, 0.15, 0.32).translate(0, 0, 3.35), D));
+      pitch.push(col(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 8).rotateX(Math.PI / 2).translate(0, 0.14, 0.3), C));
+    } else {
+      // tripod and launcher
+      for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2 + 0.5; base.push(col(new THREE.CylinderGeometry(0.03, 0.03, 1.15, 6).translate(0, 0.55, 0).rotateZ(0.5).rotateY(a).translate(0, 0.02, 0), D)); }
+      yaw.push(col(new THREE.BoxGeometry(0.18, 0.2, 0.25).translate(0, 0.95, 0), D));
+      if (E.kind === 'rr') {
+        pitch.push(col(new THREE.CylinderGeometry(0.085, 0.085, 2.1, 12).rotateX(Math.PI / 2).translate(0, 0.08, 0.1), C));
+        pitch.push(col(new THREE.CylinderGeometry(0.13, 0.09, 0.35, 12).rotateX(Math.PI / 2).translate(0, 0.08, -1.05), C)); // venturi
+      } else {
+        pitch.push(col(new THREE.CylinderGeometry(0.075, 0.075, 1.25, 12).rotateX(Math.PI / 2).translate(0, 0.08, 0.35), C));
+        pitch.push(col(new THREE.BoxGeometry(0.28, 0.22, 0.32).translate(0.2, 0.0, -0.15), D)); // guidance unit
+      }
+      pitch.push(col(new THREE.BoxGeometry(0.1, 0.12, 0.3).translate(-0.15, 0.2, -0.2), D)); // sight
+    }
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.35 });
+    EMP_CACHE[E.kind + E.col] = { base: merge(base), yaw: merge(yaw), pitch: merge(pitch), mat, py: E.kind === 'gun' ? 0.85 : 0.95 };
+  }
+  const P = EMP_CACHE[E.kind + E.col];
+  const root = new THREE.Group(), yawN = new THREE.Group(), pitchN = new THREE.Group(), muzzle = new THREE.Object3D();
+  const mk = (g) => { const m = new THREE.Mesh(g, P.mat); m.castShadow = true; return m; };
+  const meshes = [mk(P.base), mk(P.yaw), mk(P.pitch)];
+  root.add(meshes[0], yawN); yawN.add(meshes[1], pitchN); pitchN.add(meshes[2], muzzle);
+  pitchN.position.y = P.py; muzzle.position.z = E.kind === 'gun' ? 3.5 : E.kind === 'rr' ? 1.2 : 1.0;
+  muzzle.position.y = E.kind === 'gun' ? 0 : 0.08;
+  scene.add(root);
+  return { root, yawN, pitchN, muzzle, meshes };
+}
+function spawnEmplacement() {
+  const E = AT_EMP[era], pe = playerEnt(); if (!E || !pe) return null;
+  // site it where it overlooks the ground you are fighting over: a gun that sees nothing is no use
+  const fx = Math.cos(ENEMY_FRONT), fz = Math.sin(ENEMY_FRONT), eye = new THREE.Vector3();
+  const looks = [100, 160, 220].map((d) => { const x = pe.pos.x + fx * d, z = pe.pos.z + fz * d; return new THREE.Vector3(x, terrainHeight(x, z) + 2, z); });
+  looks.push(new THREE.Vector3(pe.pos.x, pe.pos.y + 2, pe.pos.z));
+  for (let tries = 0; tries < 140; tries++) {
+    const wide = tries > 70, [x, z] = enemyFrontPoint(wide ? 150 : 190, wide ? 520 : 420, ARENA + 40);
+    if (Math.hypot(x - pe.pos.x, z - pe.pos.z) < 150 || inWater(x, z)) continue;
+    if (tries < 130 && !looks.some((l) => l.distanceTo(eye.set(x, terrainHeight(x, z) + 1.4, z)) > 80 && hasLOS(eye, l))) continue;
+    if (queryColliders(x, z, 7).some((c) => c.type === 'obb' || (c.r > 1.5 && !c.tree))) continue;
+    if (emplacements.some((e) => e.alive && Math.hypot(e.pos.x - x, e.pos.z - z) < 60)) continue;
+    if (Math.abs(terrainHeight(x + 2, z) - terrainHeight(x - 2, z)) > 1.6) continue; // too steep to site a gun
+    const face = Math.atan2(pe.pos.x - x, pe.pos.z - z), y = terrainHeight(x, z);
+    const v = empVisual(E); v.root.position.set(x, y, z); v.root.rotation.y = face;
+    const e = {
+      team: 'red', isEmp: true, E, K: { name: E.name, pen: E.pen, dmg: 1.15, arm: [12, 12, 12] }, v, face, yaw: 0, elev: 0,
+      pos: new THREE.Vector3(x, y + 0.9, z), alive: true, size: 0.5, speed: 0, reload: rr(4, 8), thinkT: 0, foe: null, los: false, spottedT: -99,
+      forward(out = _v1) { return out.set(Math.sin(this.face), 0, Math.cos(this.face)); },
+    };
+    const hw = E.kind === 'gun' ? 1.15 : 0.6, hd = E.kind === 'gun' ? 1.5 : 0.7;
+    e.coll = addCollider({ type: 'obb', x, z, hw, hd, rot: face, cos: Math.cos(face), sin: Math.sin(face), y0: y - 0.2, h: E.kind === 'gun' ? 1.6 : 1.3, gun: e });
+    // the crew dig in around it
+    const n = E.kind === 'gun' ? 3 : 2, b = e.forward(new THREE.Vector3());
+    for (let i = 0; i < n; i++) {
+      const sx = (i - (n - 1) / 2) * 1.6, sz = -rr(1.4, 2.6);
+      const s = new Soldier('red', x + b.z * sx + b.x * sz, z - b.x * sx + b.z * sz, { role: 'rifle', heading: face });
+      s.ai = { foe: null, foeT: rr(0, 1), los: false, losT: 0 }; s.bunker = e; s.empCrew = e; s.K = { name: 'Gun crew' }; s.prefProne = false;
+    }
+    emplacements.push(e);
+    return e;
+  }
+  return null;
+}
+function empCrew(e) { let n = 0; for (const s of soldiers) if (s.empCrew === e && s.alive) n++; return n; }
+// a clock bearing from the player's view: 12 o'clock is straight ahead
+function withArticle(n) { return (/^([AEFHILMNORSX][^a-z]|[AEIOU])/.test(n) ? 'an ' : 'a ') + n; } // "an M1", "an RPG-7", "a Pak 40"
+function clockFrom(p) {
+  const pe = playerEnt(); if (!pe) return '';
+  const rel = wrapAngle(Math.atan2(p.x - pe.pos.x, p.z - pe.pos.z) - cam.yaw);
+  return `${((Math.round(-rel / (Math.PI / 6)) % 12) + 12) % 12 || 12} o'clock`;
+}
+function missileWarning(from, foe) {
+  if (!foe?.isPlayer || game.time - (game.mslWarnT ?? -9) < 1.5) return;
+  game.mslWarnT = game.time;
+  feed(`Missile launch · ${clockFrom(from)}${player.tank ? ' · pop smoke [X]' : ''}`, true); sfx.beep(true); setTimeout(() => sfx.beep(true), 140);
+}
+function updateEmplacements(dt) {
+  for (const e of emplacements) {
+    if (!e.alive) continue;
+    e.thinkT -= dt;
+    if (e.thinkT <= 0) {
+      e.thinkT = rr(0.5, 0.9); e.crew = empCrew(e);
+      if (!e.crew) { e.foe = null; continue; }
+      let best = null, bd = 1e9;
+      const eye = _v3.set(e.pos.x, e.pos.y + 0.5, e.pos.z);
+      for (const t of tanks) {
+        if (!t.alive || t.team === 'red') continue;
+        let d = t.pos.distanceTo(e.pos); if (d > e.E.range) continue;
+        if (t.isPlayer) d *= 0.7;
+        if (d < bd && hasLOS(eye, _v2.set(t.pos.x, t.pos.y + 1.5 * t.size, t.pos.z))) { bd = d; best = t; }
+      }
+      e.foe = best;
+    }
+    const f = e.foe; if (!f?.alive || !e.crew) continue;
+    e.reload -= dt * (e.crew >= 2 ? 1 : 0.55);
+    // the carriage gives a narrow arc; beyond it the crew heave the trails round
+    const want = Math.atan2(f.pos.x - e.pos.x, f.pos.z - e.pos.z), rel = wrapAngle(want - e.face), arc = e.E.kind === 'gun' ? 0.5 : 1.4;
+    if (Math.abs(rel) > arc) { e.face += clamp(rel, -0.22 * dt, 0.22 * dt); e.v.root.rotation.y = e.face; }
+    e.yaw = approach(e.yaw, clamp(wrapAngle(want - e.face), -arc, arc), 0.4 * dt);
+    const dist = Math.hypot(f.pos.x - e.pos.x, f.pos.z - e.pos.z), dy = f.pos.y + 1.4 * f.size - (e.pos.y + 0.1);
+    const el = e.E.kind === 'gun' ? ballisticElev(dist, dy, SHELL_SPEED) : Math.atan2(dy, dist) + 0.01;
+    e.elev = approach(e.elev, clamp(el, -0.2, 0.4), 0.3 * dt);
+    e.v.yawN.rotation.y = e.yaw; e.v.pitchN.rotation.x = -e.elev;
+    if (e.reload > 0 || Math.abs(wrapAngle(want - e.face - e.yaw)) > 0.025 || Math.abs(e.elev - clamp(el, -0.2, 0.4)) > 0.02) continue;
+    e.reload = e.E.reload * EASE.enemyReload * rr(0.9, 1.2); e.spottedT = game.time;
+    e.v.root.updateMatrixWorld();
+    const p = e.v.muzzle.getWorldPosition(new THREE.Vector3()), d = new THREE.Vector3(0, 0, 1).applyQuaternion(e.v.pitchN.getWorldQuaternion(_q1)).normalize();
+    // the launch kicks up a cloud that gives the position away
+    const gy = terrainHeight(p.x, p.z);
+    for (let i = 0; i < 12; i++) particles.dust({ x: p.x + rr(-2.5, 2.5) - d.x * 2, y: gy + 0.4, z: p.z + rr(-2.5, 2.5) - d.z * 2 }, 1.3);
+    if (e.E.kind === 'gun') {
+      const sp = 0.0045 * EASE.enemySpread; d.x += rr(-sp, sp); d.y += rr(-sp, sp) * 0.6; d.z += rr(-sp, sp); d.normalize();
+      shells.spawn(p, d, SHELL_SPEED, e, false, {}); particles.muzzle(p, d, 1); sfx.cannon(p, false);
+    } else if (e.E.kind === 'rr') {
+      const lead = dist / e.E.speed, fw = f.forward(new THREE.Vector3());
+      const aim = _v2.set(f.pos.x + fw.x * f.speed * lead * 0.7, f.pos.y + 1.4 * f.size, f.pos.z + fw.z * f.speed * lead * 0.7);
+      const dir = aim.sub(p).normalize(); dir.y += dist * 0.00011; dir.x += rr(-0.012, 0.012); dir.z += rr(-0.012, 0.012); dir.normalize();
+      fireRocket(p, dir, e, { speed: e.E.speed, dmg: e.E.dmg, pen: e.E.pen }, null); particles.muzzle(p, dir, 0.8);
+    } else { fireRocket(p, d, e, { speed: e.E.speed, dmg: e.E.dmg, pen: e.E.pen, direct: true, wire: true }, f); missileWarning(p, f); }
+  }
+}
+// a direct hit wrecks the weapon; crews nearby are caught in the blast
+function hitEmplacement(e, by, chance = 1) {
+  if (!e.alive || Math.random() > chance) return;
+  e.alive = false; e.coll.dead = true;
+  const p = e.pos.clone();
+  particles.explosion(p, 1.0, true); sfx.explosion(p, 1.0); decals.place(p.x, p.z, 3.5);
+  for (const m of e.v.meshes) m.material = wreckMat;
+  e.v.root.rotation.z = rr(-0.35, 0.35); e.v.pitchN.rotation.x = 0.25;
+  for (const s of soldiers) if (s.empCrew === e && s.alive && s.pos.distanceTo(p) < 4.5) s.damage(rr(60, 140), by, p);
+  if (by?.isPlayer) { game.kills++; const pts = 80 * Math.max(1, game.wave); game.score += pts; feed(`${e.E.name} destroyed · +${pts}`, false); showHitmark(); }
+  else if (playerEnt() && playerEnt().pos.distanceTo(p) < 600) feed(`${by?.K?.name || 'Allies'} knocked out a ${e.E.name}`, false);
+}
+function clearEmplacements() { for (const e of emplacements) { scene.remove(e.v.root); e.coll.dead = true; } emplacements.length = 0; }
+
+// ---- Helicopters ----
+const HELI = {
+  vietnam: { blue: { name: 'UH-1C Huey gunship', col: 0x4b5233, huey: true, blades: 2, missiles: 0, rockets: 14, gun: 'mg' } },
+  coldwar: {
+    blue: { name: 'AH-1S Cobra', col: 0x4a4f3a, blades: 2, missiles: 4, mpen: 650, mdmg: 95, rockets: 8, gun: 'ac' },
+    red: { name: 'Mi-24 Hind', col: 0x7a7354, cam: 0x4f5636, blades: 5, big: true, missiles: 4, mpen: 620, mdmg: 46, rockets: 16, gun: 'mg' },
+  },
+  modern: {
+    blue: { name: 'AH-64D Apache', col: 0x3f4235, blades: 4, missiles: 6, mpen: 1000, mdmg: 110, rockets: 12, gun: 'ac' },
+    red: { name: 'Ka-52 Alligator', col: 0x4f5761, coax: true, blades: 3, missiles: 4, mpen: 900, mdmg: 52, rockets: 12, gun: 'ac' },
+  },
+};
+const air = [];
+const HELI_CACHE = {};
+function heliVisual(H) {
+  const key = H.name;
+  if (!HELI_CACHE[key]) {
+    const C = new THREE.Color(H.col), C2 = new THREE.Color(H.cam ?? H.col).multiplyScalar(H.cam ? 1 : 0.85), D = new THREE.Color(0x24262a), G = new THREE.Color(0x1d2a33);
+    const col = (g, c) => paintGeo(g, (cc) => cc.copy(c));
+    const k = H.big ? 1.18 : 1, P = [];
+    const prof = H.huey ? [[0.05, 4.4], [0.7, 4.0], [1.05, 2.8], [1.15, 0.5], [1.1, -1.5], [0.7, -2.8], [0.35, -3.4]]
+      : [[0.05, 5.6], [0.45, 5.1], [0.72, 3.8], [0.82, 1.2], [0.85, -1.2], [0.62, -2.6], [0.32, -3.4]];
+    P.push(col(new THREE.LatheGeometry(prof.map(([r, z]) => new THREE.Vector2(r, z)), 16).rotateX(Math.PI / 2).scale(H.huey ? 0.85 : 0.62 * k, 1, k), C));
+    P.push(col(new THREE.CylinderGeometry(0.22, 0.34, 6.6, 10).rotateX(Math.PI / 2).translate(0, 0.35, -6.4 * k), C2));
+    P.push(col(new THREE.BoxGeometry(0.1, 1.7, 1.1).rotateX(0.35).translate(0, 1.1, -9.5 * k), C2));
+    P.push(col(new THREE.BoxGeometry(2.0, 0.06, 0.55).translate(0, 0.35, -8.4 * k), C2));
+    P.push(col(new THREE.BoxGeometry(1.15, 0.65, 2.6).translate(0, 0.95, -0.4), C2)); // engine housing
+    P.push(col(new THREE.CylinderGeometry(0.11, 0.14, H.coax ? 1.4 : 0.7, 8).translate(0, 1.55, 0), D)); // mast
+    // canopy: a tandem bubble for the gunships, a broad windscreen on the Huey
+    P.push(col(new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(H.huey ? 1.6 : 1.05 * k, 1.0, H.huey ? 1.6 : 2.6 * k).translate(0, H.huey ? 0.55 : 0.5, H.huey ? 2.5 : 2.6 * k), G));
+    if (!H.huey || true) {
+      const span = H.big ? 3.4 : H.huey ? 2.6 : 2.4;
+      P.push(col(new THREE.BoxGeometry(span * 2, 0.1, 0.9).translate(0, -0.15, -0.3), C2)); // stub wings
+      for (const s of [-1, 1]) {
+        P.push(col(new THREE.CylinderGeometry(0.22, 0.22, 1.5, 10).rotateX(Math.PI / 2).translate(s * span * 0.62, -0.42, -0.2), D)); // rocket pods
+        if (H.missiles) for (const r of [-0.16, 0.16]) P.push(col(new THREE.CylinderGeometry(0.09, 0.09, 1.6, 8).rotateX(Math.PI / 2).translate(s * span * 0.95 + r, -0.4, -0.1), D));
+      }
+    }
+    P.push(col(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 6).rotateX(Math.PI / 2).translate(0, -0.6, 4.2 * k), D)); // chin gun
+    if (H.huey || H.blades === 2) for (const s of [-1, 1]) { P.push(col(new THREE.BoxGeometry(0.08, 0.08, 4.4).translate(s * 0.8, -1.15, 0.3), D)); for (const zz of [-0.8, 1.4]) P.push(col(new THREE.BoxGeometry(0.06, 0.5, 0.06).translate(s * 0.7, -0.9, zz), D)); }
+    else for (const [x, z] of [[-0.8, 0.8], [0.8, 0.8], [0, -8.6 * k]]) P.push(col(new THREE.CylinderGeometry(0.2, 0.2, 0.15, 10).rotateZ(Math.PI / 2).translate(x, -1.0, z), D));
+    const geo = merge(P);
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.4, envMapIntensity: 1.1 });
+    const bladeGeo = new THREE.BoxGeometry(0.42, 0.05, 7.6 * k).translate(0, 0, 3.8 * k);
+    const disc = new THREE.CircleGeometry(7.6 * k, 32).rotateX(-Math.PI / 2);
+    HELI_CACHE[key] = { geo, mat, bladeGeo, disc, k, discMat: new THREE.MeshBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide }) };
+  }
+  const HC = HELI_CACHE[key];
+  const root = new THREE.Group(); root.rotation.order = 'YXZ';
+  const body = new THREE.Mesh(HC.geo, HC.mat); body.castShadow = true; root.add(body);
+  const rotors = [];
+  for (let r = 0; r < (H.coax ? 2 : 1); r++) {
+    const rot = new THREE.Group(); rot.position.y = H.coax ? 1.75 + r * 0.6 : 1.9;
+    for (let b = 0; b < H.blades; b++) { const m = new THREE.Mesh(HC.bladeGeo, darkMetal); m.rotation.y = b / H.blades * Math.PI * 2; rot.add(m); }
+    rot.add(new THREE.Mesh(HC.disc, HC.discMat));
+    root.add(rot); rotors.push(rot);
+  }
+  let tail = null;
+  if (!H.coax) { tail = new THREE.Group(); tail.position.set(0.18, 1.2, -9.6 * HC.k); const t = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.4, 0.18), darkMetal); tail.add(t); root.add(tail); }
+  scene.add(root);
+  return { root, rotors, tail, body };
+}
+function spawnHeli(team) {
+  const H = HELI[era]?.[team], pe = playerEnt(); if (!H || !pe) return null;
+  const a = (team === 'red' ? ENEMY_FRONT : ENEMY_FRONT + Math.PI) + rr(-0.5, 0.5), R = 1150;
+  const x = pe.pos.x + Math.cos(a) * R, z = pe.pos.z + Math.sin(a) * R;
+  const h = {
+    team, H, isHeli: true, air: true, K: { name: H.name, arm: [20, 20, 20], pen: 70, dmg: 0.25 }, v: heliVisual(H),
+    pos: new THREE.Vector3(x, terrainHeight(x, z) + 70, z), vel: new THREE.Vector3(), heading: Math.atan2(-Math.cos(a), -Math.sin(a)), pitch: 0, bank: 0,
+    alive: true, hp: H.big ? 130 : 100, maxHp: H.big ? 130 : 100, size: 1, speed: 0, home: a, standoff: rr(380, 560), alt: rr(32, 48),
+    state: 'in', t: 0, stay: rr(45, 65), missiles: H.missiles, rockets: H.rockets, fireT: rr(3, 6), rocketT: rr(4, 8), gunT: 0, salvo: 0, thinkT: 0, foe: null, los: false, sndT: 0, spottedT: game.time,
+    forward(out = _v1) { return this.speed > 1 ? out.copy(this.vel).setY(0).normalize() : out.set(Math.sin(this.heading), 0, Math.cos(this.heading)); },
+  };
+  h.heading = Math.atan2(pe.pos.x - x, pe.pos.z - z);
+  air.push(h);
+  return h;
+}
+function airFoe(h) {
+  const cand = [];
+  for (const t of tanks) { if (!t.alive || t.team === h.team) continue; const d = t.pos.distanceTo(h.pos); if (d < 1800) cand.push([d * (t.isPlayer ? 0.6 : 1) * (t.K.cls === 'ifv' && h.H.missiles ? 0.9 : 1), t]); }
+  for (const s of soldiers) { if (!s.alive || s.team === h.team || s.boat) continue; const d = s.pos.distanceTo(h.pos); if (d < 900) cand.push([d * (s.isPlayer ? 1.0 : 1.7), s]); }
+  for (const e of emplacements) { if (e.alive && h.team === 'blue' && game.time - e.spottedT < 25) { const d = e.pos.distanceTo(h.pos); if (d < 1500) cand.push([d * 0.8, e]); } }
+  cand.sort((a, b) => a[0] - b[0]);
+  for (let i = 0; i < Math.min(6, cand.length); i++) { const o = cand[i][1], c = o.isSoldier ? o.center(_v2) : _v2.set(o.pos.x, o.pos.y + 1.4 * o.size, o.pos.z); if (hasLOS(h.pos, c)) return o; }
+  return cand[0]?.[1] || null;
+}
+const _hp = new THREE.Vector3();
+function updateHeli(h, dt) {
+  h.t += dt;
+  const v = h.v;
+  if (!h.alive) {
+    if (!h.crashed) {
+      h.vel.y -= 9.81 * dt; h.spin = (h.spin || 1) + dt * 1.5; h.heading += h.spin * dt;
+      h.pos.addScaledVector(h.vel, dt); h.bank += dt * 0.4;
+      if (Math.random() < dt * 40) particles.fire(_hp.set(h.pos.x, h.pos.y + 1, h.pos.z), 0.8);
+      if (Math.random() < dt * 30) particles.smoke(h.pos, 0.6, 0.06, 4);
+      const g = Math.max(terrainHeight(h.pos.x, h.pos.z), waterAt(h.pos.x, h.pos.z));
+      if (h.pos.y < g + 0.8) {
+        h.crashed = true; h.burnT = 45; h.pos.y = g + 0.6;
+        particles.explosion(h.pos, 2.0, true); sfx.explosion(h.pos, 1.6); decals.place(h.pos.x, h.pos.z, 9); nearMissShake(h.pos);
+        splashDamage(h.pos, 9, 150, null);
+        h.bank = rr(-1.3, 1.3); h.pitch = rr(-0.3, 0.3); v.body.material = wreckMat; for (const r of v.rotors) r.visible = false; if (v.tail) v.tail.visible = false;
+      }
+    } else if ((h.burnT -= dt) > 0) { if (Math.random() < dt * 14) particles.fire(_hp.set(h.pos.x, h.pos.y + 1.2, h.pos.z), 1.0); if (Math.random() < dt * 10) particles.smoke(h.pos, 0.9, 0.08, 7); }
+    v.root.position.copy(h.pos); v.root.rotation.set(h.pitch, h.heading, h.bank);
+    return;
+  }
+  const pe = playerEnt();
+  h.thinkT -= dt;
+  if (h.thinkT <= 0) {
+    h.thinkT = rr(1.2, 2);
+    if (!h.foe?.alive || Math.random() < 0.4) h.foe = airFoe(h);
+    const f = h.foe; h.los = !!f && hasLOS(h.pos, f.isSoldier ? f.center(_v2) : _v2.set(f.pos.x, f.pos.y + 1.4 * f.size, f.pos.z));
+    // blind on station: slide round to a new angle and climb for a view over the rooftops and ridges
+    if (f && !h.los && h.state !== 'out' && (h.blind = (h.blind || 0) + 1) >= 3) { h.blind = 0; h.home += rr(-0.7, 0.7); h.standoff = rr(300, 520); h.alt = Math.min(110, h.alt + 18); }
+    else if (h.los) h.blind = 0;
+  }
+  if (h.state !== 'out' && (h.t > h.stay || h.hp < h.maxHp * 0.45 || (h.missiles <= 0 && h.rockets <= 0 && h.t > 25))) {
+    h.state = 'out';
+    if (h.team === 'red' && pe && h.pos.distanceTo(pe.pos) < 1200) feed(`${h.H.name} breaking off`, false);
+  }
+  const foe = h.foe;
+  // where to be: a firing station off to its own side of the target, drifting to stay hard to hit
+  let gx, gz, gy;
+  if (h.state === 'out') { gx = h.pos.x + Math.cos(h.home) * 400; gz = h.pos.z + Math.sin(h.home) * 400; }
+  else {
+    const ref = foe?.pos || pe?.pos || h.pos, a = h.home + Math.sin(h.t * 0.12 + h.standoff) * 0.45;
+    gx = ref.x + Math.cos(a) * h.standoff; gz = ref.z + Math.sin(a) * h.standoff;
+  }
+  const dx = gx - h.pos.x, dz = gz - h.pos.z, dist = Math.hypot(dx, dz);
+  const want = Math.min(h.state === 'out' ? 65 : 55, dist * 0.35);
+  const ax = clamp(dx / (dist || 1) * want - h.vel.x, -10 * dt, 10 * dt), az = clamp(dz / (dist || 1) * want - h.vel.z, -10 * dt, 10 * dt);
+  h.vel.x += ax; h.vel.z += az;
+  // terrain following: look ahead and keep the altitude above the highest ground
+  let ground = terrainHeight(h.pos.x, h.pos.z);
+  for (const k of [40, 90]) ground = Math.max(ground, terrainHeight(h.pos.x + h.vel.x / Math.max(1, Math.hypot(h.vel.x, h.vel.z)) * k, h.pos.z + h.vel.z / Math.max(1, Math.hypot(h.vel.x, h.vel.z)) * k));
+  gy = Math.max(ground, LAKE_Y) + h.alt + (h.state === 'in' && dist > 600 ? 25 : 0);
+  h.vel.y = approach(h.vel.y, clamp((gy - h.pos.y) * 0.8, -10, 14), 14 * dt);
+  h.pos.addScaledVector(h.vel, dt);
+  h.speed = Math.hypot(h.vel.x, h.vel.z);
+  // nose into the travel when moving fast, onto the target when on station
+  const faceTo = h.speed > 18 || !foe ? Math.atan2(h.vel.x, h.vel.z) : Math.atan2(foe.pos.x - h.pos.x, foe.pos.z - h.pos.z);
+  const turn = clamp(wrapAngle(faceTo - h.heading), -0.9 * dt, 0.9 * dt); h.heading += turn;
+  const fwdV = h.vel.x * Math.sin(h.heading) + h.vel.z * Math.cos(h.heading), sideV = h.vel.x * Math.cos(h.heading) - h.vel.z * Math.sin(h.heading);
+  h.pitch = damp(h.pitch, clamp(fwdV * 0.006 + (ax * Math.sin(h.heading) + az * Math.cos(h.heading)) / dt * 0.02, -0.2, 0.32), 3, dt);
+  h.bank = damp(h.bank, clamp(-sideV * 0.012 - turn / dt * 0.25, -0.5, 0.5), 3, dt);
+  v.root.position.copy(h.pos); v.root.rotation.set(h.pitch, h.heading, h.bank);
+  v.rotors.forEach((r, i) => (r.rotation.y += dt * 26 * (i ? -1 : 1))); if (v.tail) v.tail.rotation.x += dt * 60;
+  if ((h.sndT -= dt) <= 0) { h.sndT = 0.085; if (camera.position.distanceTo(h.pos) < 1300) sfx.rotor(h.pos, h.H.big ? 1.2 : 1); }
+  if (h.team === 'red' && h.los) h.spottedT = game.time;
+  // weapons
+  h.fireT -= dt; h.rocketT -= dt; h.gunT -= dt;
+  if (h.salvo > 0 && h.rocketT <= 0 && foe?.alive) {
+    h.salvo--; h.rockets--; h.rocketT = 0.14;
+    const side = h.salvo % 2 ? 1 : -1, from = _hp.set(Math.cos(h.heading) * side * 1.6, -0.5, -Math.sin(h.heading) * side * 1.6).add(h.pos);
+    const c = foe.isSoldier ? foe.center(_v2) : _v2.set(foe.pos.x, foe.pos.y + 1.0, foe.pos.z), fd = c.distanceTo(from);
+    const dir = c.clone().sub(from).normalize(); dir.y += fd * 0.00006; dir.x += rr(-0.022, 0.022); dir.y += rr(-0.012, 0.012); dir.z += rr(-0.022, 0.022); dir.normalize();
+    fireRocket(from.clone(), dir, h, { speed: 230, dmg: 34, pen: 120 }, null);
+    if (h.salvo <= 0) h.rocketT = rr(7, 12);
+  }
+  if (h.state === 'out' || !foe?.alive || !h.los) return;
+  const fdist = foe.pos.distanceTo(h.pos), off = Math.abs(wrapAngle(Math.atan2(foe.pos.x - h.pos.x, foe.pos.z - h.pos.z) - h.heading));
+  if (!foe.isSoldier && h.missiles > 0 && h.fireT <= 0 && fdist > 220 && fdist < 1700 && off < 0.5) {
+    h.missiles--; h.fireT = rr(6, 10) * (h.team === 'red' ? EASE.enemyReload : 1);
+    const side = h.missiles % 2 ? 1 : -1, from = new THREE.Vector3(Math.cos(h.heading) * side * 2.3, -0.4, -Math.sin(h.heading) * side * 2.3).add(h.pos);
+    const dir = _v2.set(foe.pos.x, foe.pos.y + 1.4 * foe.size, foe.pos.z).sub(from).normalize();
+    fireRocket(from, dir, h, { speed: 150, dmg: h.H.mdmg, pen: h.H.mpen, direct: true }, foe);
+    if (h.team === 'red') missileWarning(from, foe);
+    return;
+  }
+  if (h.rockets > 0 && h.salvo <= 0 && h.rocketT <= 0 && fdist > 180 && fdist < 900 && off < 0.2) { h.salvo = Math.min(4, h.rockets); return; }
+  if (h.gunT <= 0 && fdist < 850 && off < 1.3) {
+    h.burst = (h.burst ?? 0) + 1; h.gunT = h.burst % (h.H.gun === 'ac' ? 6 : 14) ? (h.H.gun === 'ac' ? 0.16 : 0.06) : rr(1.2, 2.4);
+    const from = _hp.set(Math.sin(h.heading) * 4, -0.7, Math.cos(h.heading) * 4).add(h.pos);
+    const c = foe.isSoldier ? foe.center(_v2) : _v2.set(foe.pos.x, foe.pos.y + 1.2, foe.pos.z);
+    const dir = c.clone().sub(from).normalize(), sp = h.team === 'red' ? 0.02 : 0.014; dir.x += rr(-sp, sp); dir.y += rr(-sp, sp); dir.z += rr(-sp, sp); dir.normalize();
+    if (h.H.gun === 'ac') { shells.spawn(from.clone(), dir, 900, h, false, { ac: true, acDmg: 0.14, he: true }); sfx.autocannon(from, false); }
+    else { shells.spawn(from.clone(), dir, 820, h, true, { kind: 'bullet', dmg: h.team === 'red' ? 16 : 30, tracer: h.burst % 3 === 0 }); if (h.burst % 2) sfx.mg(from); }
+    firePool.emit({ x: from.x, y: from.y, z: from.z, life: 0.05, s0: 0.5, s1: 0.8, c0: [16, 9, 3, 1], c1: [4, 1, 0.2, 0] });
+  }
+}
+// ---- FPV drones: cheap one-way attack quadcopters that dive onto the thin roof armour ----
+const DRONE_GEO = (() => {
+  const D = new THREE.Color(0x26282b), O = new THREE.Color(0x4d5236), P = [];
+  const col = (g, c) => paintGeo(g, (cc) => cc.copy(c));
+  P.push(col(new THREE.BoxGeometry(0.22, 0.09, 0.3), D));
+  for (const [x, z] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { P.push(col(new THREE.BoxGeometry(0.035, 0.03, 0.3).rotateY(Math.atan2(x, z)).translate(x * 0.1, 0, z * 0.1), D)); P.push(col(new THREE.CylinderGeometry(0.11, 0.11, 0.01, 12).translate(x * 0.2, 0.05, z * 0.2), D)); }
+  P.push(col(new THREE.CylinderGeometry(0.045, 0.045, 0.42, 10).rotateX(Math.PI / 2).translate(0, -0.08, 0.22), O)); // the warhead
+  P.push(col(new THREE.ConeGeometry(0.045, 0.12, 10).rotateX(Math.PI / 2).translate(0, -0.08, 0.49), O));
+  return merge(P).scale(1.4, 1.4, 1.4);
+})();
+const droneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.3 });
+const ledMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 0.4, 0.2), fog: false });
+function spawnDrone() {
+  const pe = playerEnt(); if (!pe) return null;
+  const [x, z] = enemyFrontPoint(430, 560, ARENA + 260);
+  const root = new THREE.Group(), m = new THREE.Mesh(DRONE_GEO, droneMat), led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 4), ledMat);
+  led.position.set(0, 0.1, -0.2); root.add(m, led); scene.add(root);
+  const d = {
+    team: 'red', isDrone: true, air: true, K: { name: 'FPV drone', arm: [1, 1, 1], pen: 0 }, v: { root, led },
+    pos: new THREE.Vector3(x, terrainHeight(x, z) + 22, z), vel: new THREE.Vector3(), alive: true, hp: 5, size: 0.3, speed: 0, t: 0, life: rr(80, 100), target: null, thinkT: 0, sndT: 0, spottedT: -99, seed: rr(0, 9),
+    forward(out = _v1) { return out.copy(this.vel).setY(0).normalize(); },
+  };
+  air.push(d);
+  return d;
+}
+function droneTarget(d) {
+  let best = null, bd = 1e9;
+  for (const t of tanks) { if (!t.alive || t.team === 'red') continue; const dd = t.pos.distanceTo(d.pos) * (t.isPlayer ? 0.55 : 1); if (dd < bd) { bd = dd; best = t; } }
+  for (const s of soldiers) { if (!s.alive || s.team === 'red' || s.boat) continue; const dd = s.pos.distanceTo(d.pos) * (s.isPlayer ? 0.8 : 2.2); if (dd < bd) { bd = dd; best = s; } }
+  return best;
+}
+function updateDrone(d, dt) {
+  d.t += dt;
+  if (!d.alive || d.t > d.life) { if (d.alive) droneBlast(d, null); d.gone = true; return; }
+  d.thinkT -= dt;
+  if (d.thinkT <= 0 || !d.target?.alive) { d.thinkT = 2; d.target = droneTarget(d); }
+  const T = d.target, pe = playerEnt();
+  let want;
+  if (T) {
+    const tp = T.isSoldier ? T.center(_v2) : _v2.set(T.pos.x, T.pos.y + 2.2 * T.size, T.pos.z);
+    const h = Math.hypot(tp.x - d.pos.x, tp.z - d.pos.z);
+    if (h > 75) { const cy = Math.max(terrainHeight(d.pos.x, d.pos.z), terrainHeight(tp.x, tp.z)) + 20; want = _v3.set(tp.x - d.pos.x, (cy - d.pos.y) * 3, tp.z - d.pos.z).normalize().multiplyScalar(30); }
+    else want = _v3.copy(tp).sub(d.pos).normalize().multiplyScalar(37); // terminal dive
+    if (d.pos.distanceTo(tp) < (T.isSoldier ? 1.3 : 2.7)) { droneBlast(d, T); return; }
+    if (T.isPlayer && !d.warned && d.pos.distanceTo(T.pos) < 280) { d.warned = true; feed(`FPV drone diving on you · ${clockFrom(d.pos)} · shoot it down`, true); }
+  } else want = _v3.set(Math.sin(d.t * 0.5 + d.seed) * 4, 0, Math.cos(d.t * 0.5 + d.seed) * 4);
+  // a jittery human pilot on a video link
+  want.x += noise2(d.t * 1.7, d.seed) * 4; want.y += noise2(d.t * 1.9, d.seed + 3) * 2;
+  d.vel.x = approach(d.vel.x, want.x, 30 * dt); d.vel.y = approach(d.vel.y, want.y, 30 * dt); d.vel.z = approach(d.vel.z, want.z, 30 * dt);
+  d.pos.addScaledVector(d.vel, dt); d.speed = d.vel.length();
+  if (d.pos.y < terrainHeight(d.pos.x, d.pos.z) + 0.3) { droneBlast(d, null); return; }
+  d.v.root.position.copy(d.pos); d.v.root.lookAt(_v1.copy(d.pos).add(d.vel)); d.v.led.visible = (d.t * 4 | 0) % 2 === 0;
+  if (d.pos.distanceTo(camera.position) < 420 && (d.sndT -= dt) <= 0) { d.sndT = 0.17; sfx.drone(d.pos); }
+  if (pe && d.pos.distanceTo(pe.pos) < 300) d.spottedT = game.time;
+}
+function droneBlast(d, T) {
+  d.alive = false; d.gone = true;
+  const p = d.pos.clone();
+  particles.explosion(p, 0.75, !T); sfx.explosion(p, 0.9); nearMissShake(p);
+  splashDamage(p, 5.5, 150, d);
+  if (!T || T.isSoldier) { if (!T) decals.place(p.x, p.z, 2); return; }
+  // a shaped charge straight down through the roof
+  const tk = T, lp = new THREE.Vector3(rr(-0.8, 0.8), 2.4, rr(-2.5, 1)), was = tk.alive;
+  particles.penetration(p); sfx.clang(p);
+  const mods = moduleHit(tk, lp, 'roof', true), dmg = 62;
+  tk.damage(dmg, d, p, rackHit(tk, 'roof', true));
+  if (tk.isPlayer) { onPlayerHit(d, dmg * EASE.playerArmour); feed(`Drone hit · roof${mods.length ? ' · ' + mods.join(', ') : ''}`, true); }
+  else if (was && !tk.alive && tk.team === 'blue') feed(`${tk.K.name} lost to an FPV drone`, true);
+}
+// what shots do to things in the air
+function airHit(a, s, p) {
+  if (!a.alive || (s.owner && s.owner.team === a.team)) return;
+  const amt = s.kind === 'rocket' ? 220 : s.mg ? (s.kind === 'bullet' ? (s.dmg ?? 30) * 0.12 : 3) : s.ac ? 15 : 160;
+  a.hp -= amt; particles.sparks(p, s.mg ? 4 : 14); if (Math.random() < 0.4) sfx.ping(p);
+  if (s.owner?.isPlayer) showHitmark();
+  if (a.hp > 0) return;
+  if (a.isDrone) { droneBlast(a, null); if (s.owner?.isPlayer) { game.score += 20 * Math.max(1, game.wave); feed('Drone shot down', false); } return; }
+  a.alive = false; a.spin = rr(1.5, 3) * (Math.random() < 0.5 ? 1 : -1);
+  particles.explosion(a.pos, 1.1, false); sfx.explosion(a.pos, 1.2);
+  if (s.owner?.isPlayer && a.team === 'red') { game.kills++; const pts = Math.round(160 * Math.max(1, game.wave)); game.score += pts; feed(`${a.H.name} shot down · +${pts}`, false); bigMsg('HELICOPTER DOWN', null, 1.6); }
+  else if (a.team === 'red') feed(`${s.owner?.K?.name || 'Allies'} shot down a ${a.H.name}`, false);
+  else feed(`${a.H.name} shot down`, true);
+}
+function updateAir(dt) {
+  for (let i = air.length - 1; i >= 0; i--) {
+    const a = air[i];
+    if (a.isDrone) updateDrone(a, dt); else updateHeli(a, dt);
+    if (a.gone || (a.isHeli && a.state === 'out' && a.alive && playerEnt() && a.pos.distanceTo(playerEnt().pos) > 1400)) { scene.remove(a.v.root); air.splice(i, 1); }
+  }
+}
+function clearAir() { for (const a of air) scene.remove(a.v.root); air.length = 0; }
+// enemy air and drones arrive on their own clock during a wave
+function updateAirWaves(dt) {
+  const pe = playerEnt(); if (!pe) return;
+  if (game.redHeliT > 0 && (game.redHeliT -= dt) <= 0) {
+    const h = spawnHeli('red');
+    if (h) { feed(`Enemy helicopter inbound from the ${compassWord(h.pos.x - pe.pos.x, h.pos.z - pe.pos.z)} · ${h.H.name}`, true); sfx.incoming(1.2); }
+  }
+  if (game.droneQ > 0 && (game.droneT -= dt) <= 0) { game.droneQ--; game.droneT = rr(5, 14); spawnDrone(); if (!game.droneMsg) { game.droneMsg = true; feed('Enemy FPV drones in the air · listen for the buzz', true); } }
+}
+// ---- Thermal imaging: hot engines, gun barrels, bodies and fires glow white; smoke and dust no longer hide them ----
+const heatTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.4, 'rgba(255,255,255,0.55)'], [1, 'rgba(255,255,255,0)']]);
+function heatPoints(n, size) {
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); g.setDrawRange(0, 0);
+  const p = new THREE.Points(g, new THREE.PointsMaterial({ size, map: heatTex, color: new THREE.Color(5, 0, 0), transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false }));
+  p.frustumCulled = false; p.visible = false; p.renderOrder = 5; scene.add(p);
+  return p;
+}
+const heatBig = heatPoints(400, 3.6), heatSmall = heatPoints(800, 1.3);
+let heatLosT = 0;
+function updateThermal(dt) {
+  const on = !!game.thermal && !!player.tank?.alive && game.mode !== 'title';
+  grade.uniforms.thermal.value = damp(grade.uniforms.thermal.value, on ? 1 : 0, 12, dt);
+  heatBig.visible = heatSmall.visible = on; smokePool.mesh.visible = !on;
+  if (!on) return;
+  const eye = camera.position, refresh = (heatLosT -= dt) <= 0; if (refresh) heatLosT = 0.25;
+  const vis = (e, y) => { if (refresh || e._tiT === undefined) { e._tiT = hasLOS(eye, _v3.set(e.pos.x, e.pos.y + y, e.pos.z)) || hasLOS(eye, _v3.set(e.pos.x, e.pos.y + y + 1, e.pos.z)); } return e._tiT; };
+  let nb = 0, ns = 0; const B = heatBig.geometry.attributes.position.array, S = heatSmall.geometry.attributes.position.array;
+  for (const t of tanks) {
+    if (t.isPlayer || nb > 395) continue;
+    if (!t.alive && (!t.brewT && game.time - (t.lastHit ?? 0) > 70)) continue;
+    if (t.pos.distanceTo(eye) > 1500 || !vis(t, 1.6 * t.size)) continue;
+    const m = t.v.root.matrixWorld;
+    for (const z of [-2.6, -1.2, 0.6]) { _v1.set(0, 1.3, z).applyMatrix4(m); B[nb * 3] = _v1.x; B[nb * 3 + 1] = _v1.y; B[nb * 3 + 2] = _v1.z; nb++; }
+  }
+  for (const a of air) { if (!a.alive || nb > 398 || a.pos.distanceTo(eye) > 1800) continue; B[nb * 3] = a.pos.x; B[nb * 3 + 1] = a.pos.y + 0.6; B[nb * 3 + 2] = a.pos.z; nb++; }
+  for (const s of soldiers) {
+    if (!s.alive || ns > 795 || s.isPlayer || s.pos.distanceTo(eye) > 900 || !vis(s, 1.0)) continue;
+    const h = s.height();
+    for (const f of [0.35, 0.75]) { S[ns * 3] = s.pos.x; S[ns * 3 + 1] = s.pos.y + h * f; S[ns * 3 + 2] = s.pos.z; ns++; }
+  }
+  heatBig.geometry.setDrawRange(0, nb); heatBig.geometry.attributes.position.needsUpdate = true;
+  heatSmall.geometry.setDrawRange(0, ns); heatSmall.geometry.attributes.position.needsUpdate = true;
 }
 
 // ---- First-person player ----
@@ -5846,9 +6419,9 @@ function updateInfantryPlayer(dt) {
     if (L.lock && inf.ads > 0.7) {
       const eye = camera.getWorldPosition(_eye), dir = camera.getWorldDirection(_v2);
       let best = 0.17;
-      for (const t of tanks) {
-        if (!t.alive || t.team !== 'red') continue;
-        const c = _v3.set(t.pos.x, t.pos.y + 1.4 * t.size, t.pos.z), to = c.clone().sub(eye), d = to.length();
+      for (const t of [...tanks, ...air]) {
+        if (!t.alive || t.team !== 'red' || t.isDrone) continue;
+        const c = _v3.set(t.pos.x, t.pos.y + (t.air ? 0 : 1.4 * t.size), t.pos.z), to = c.clone().sub(eye), d = to.length();
         let a = Math.acos(clamp(to.normalize().dot(dir), -1, 1));
         if (t === inf.lockTarget) a *= 0.5; // sticky: keep tracking the tank you're already on
         const seen = hasLOS(eye, c) || hasLOS(eye, _v1.set(t.pos.x, t.pos.y + 2.3 * t.size, t.pos.z));
@@ -6003,7 +6576,7 @@ function updateMarkers() {
 function t0aps() { return player.tank?.K.aps; }
 function updateHUD(dt) {
   camera.updateMatrixWorld(); // project markers with this frame's camera, not last frame's
-  $('clu').hidden = true; $('adsRet').hidden = true; $('infCross').hidden = true; $('wLabel').textContent = player.tank ? ammoName(player.tank, game.ammoType) + ' [1 AP · 2 HE]' + (player.tank.K.tow ? ` · TOW ${game.tow} [F]` : '') + (player.tank.K.carry && !player.tank.dismounted ? ' · squad [E]' : '') + ` · smoke ${game.smoke ?? 0} [X]` : '';
+  $('clu').hidden = true; $('adsRet').hidden = true; $('infCross').hidden = true; $('wLabel').textContent = player.tank ? ammoName(player.tank, game.ammoType) + ' [1 AP · 2 HE]' + (player.tank.K.tow ? ` · TOW ${game.tow} [F]` : '') + (player.tank.K.carry && !player.tank.dismounted ? ' · squad [E]' : '') + ` · smoke ${game.smoke ?? 0} [X]` + (player.tank.K.thermal ? ` · ${game.thermal ? 'TI ON' : 'TI'} [N]` : '') : '';
   { const n = tanks.reduce((a, x) => a + (x.role === 'ally' && x.alive ? 1 : 0), 0); $('vCmd').textContent = `Platoon ${n} · ${ORDERS[game.order] || ORDERS.follow} [T] · mark [V] · guns ${game.fireT > 0 ? Math.ceil(game.fireT) + ' s' : 'ready'} [B]`; }
   if (player.soldier) return updateInfantryHUD(dt);
   $('w2Label').textContent = 'Coax MG' + (t0aps() ? ` · APS ${player.tank.aps}` : '');
@@ -6227,6 +6800,7 @@ function resetWorld() {
   for (const s of shells.list) if (s.mesh) scene.remove(s.mesh); shells.list.length = 0;
   clearSoldiers();
   clearBoats();
+  clearEmplacements(); clearAir();
   resetSupport();
   SHELL_SPEED = ERAS[era].shell;
   grade.uniforms.eraTint.value.set(...ERAS[era].tint); grade.uniforms.eraSat.value = ERAS[era].sat;
@@ -6242,7 +6816,7 @@ function startGame() {
   sfx.init();
   game.role = titleRole;
   resetWorld();
-  Object.assign(game, { squadsToSpawn: 0, mode: 'play', wave: 0, kills: 0, score: 0, waveTimer: 0, toSpawn: 0, ammo: player.tank?.K.ac ? 400 : 40, tow: player.tank?.K.tow || 0, towT: 0, smoke: 2, ammoType: 'AP', mgHeat: 0, mgCool: false, order: 'follow', focus: null, focusT: 0, fireT: 0, anchor: null, plt: null, bailed: false });
+  Object.assign(game, { squadsToSpawn: 0, mode: 'play', wave: 0, kills: 0, score: 0, waveTimer: 0, toSpawn: 0, ammo: player.tank?.K.ac ? 400 : 40, tow: player.tank?.K.tow || 0, towT: 0, smoke: 2, ammoType: 'AP', mgHeat: 0, mgCool: false, order: 'follow', focus: null, focusT: 0, fireT: 0, anchor: null, plt: null, bailed: false, thermal: false, redHeliT: 0, droneQ: 0, droneT: 0, droneMsg: false });
   for (const a of [...dmgDirs.children]) a.remove();
   $('feed').innerHTML = '';
   setScreen(null);
@@ -6274,7 +6848,7 @@ function returnToMenu() {
   game.mode = 'title'; clearTimeout(msgTimer); $('msg').classList.remove('show'); $('feed').innerHTML = '';
   for (const a of [...dmgDirs.children]) a.remove();
   mouse.fire = mouse.zoom = mouse.pressed = false; cam.zoomToggle = false; damageFx = 0; grade.uniforms.damage.value = 0; grade.uniforms.scope.value = 0; grade.uniforms.supp.value = 0;
-  vmPass.enabled = false; wasAlive = true;
+  vmPass.enabled = false; wasAlive = true; game.thermal = false; grade.uniforms.thermal.value = 0; heatBig.visible = heatSmall.visible = false; smokePool.mesh.visible = true;
   resetWorld(); showTankChoice(); setScreen('title');
 }
 $('btnMenu').addEventListener('click', returnToMenu);
@@ -6321,7 +6895,8 @@ function frame() {
 function simStep(simDt) {
   {
     updatePlayer(simDt);
-    if (game.mode === 'play') { updateCommand(simDt); updateWaves(simDt); }
+    if (game.mode === 'play') { updateCommand(simDt); updateWaves(simDt); updateAirWaves(simDt); updateEmplacements(simDt); }
+    if (game.mode !== 'title') updateAir(simDt);
     for (const t of tanks) { if (!t.isPlayer && t.alive && t.ai && game.mode !== 'title') updateAI(t, simDt); t.update(simDt); }
     updateSoldiers(simDt);
     updateCity(simDt);
@@ -6334,6 +6909,7 @@ function simStep(simDt) {
     updateFlying(simDt);
     updateEmitters(simDt);
     updateFireLights();
+    updateThermal(simDt);
     for (let i = fallingTrees.length - 1; i >= 0; i--) {
       const tr = fallingTrees[i]; tr.fallVel += simDt * 2.2; tr.fall = Math.min(Math.PI / 2 - 0.08, tr.fall + tr.fallVel * simDt);
       setTreeMatrix(tr);
@@ -6403,7 +6979,7 @@ applyQuality();
 $('loading').hidden = true;
 setScreen('title');
 requestAnimationFrame(frame);
-window.__warzone = { watchFrameRate, cityBuildings, game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, sun, sunFar, support, _dbg: { shells, segmentHit, hasLOS, terrainHeight }, sim: (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { game.time += dt; simStep(dt); updateCamera(dt); camera.updateMatrixWorld(); } }, aoPass, renderPass, nearGrass, soldiers, inf, keys, spawnSquad, setEra: (e, r) => { era = e; titleRole = r; game.role = r; loadPlayerKind(); showTankChoice(); resetWorld(); } };
+window.__warzone = { watchFrameRate, cityBuildings, game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, sun, sunFar, support, _dbg: { shells, segmentHit, hasLOS, terrainHeight, Tank, newAI }, sim: (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { game.time += dt; simStep(dt); updateCamera(dt); camera.updateMatrixWorld(); } }, aoPass, renderPass, nearGrass, soldiers, inf, keys, spawnSquad, air, emplacements, spawnHeli, spawnDrone, spawnEmplacement, support2: () => support, setEra: (e, r) => { era = e; titleRole = r; game.role = r; loadPlayerKind(); showTankChoice(); resetWorld(); } };
 </script>
 </body>
 </html>
