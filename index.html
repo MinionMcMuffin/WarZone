@@ -2961,7 +2961,7 @@ for (const k in KINDS) { const a = ARMOUR[k] || [100, 40, 30, 150]; KINDS[k].arm
 const STAB = { ww2: 0.05, dday: 0.05, korea: 0.2, vietnam: 0.45, coldwar: 0.85, modern: 1 };
 const RACK = { t72: 1.7, t72a: 1.7, t64b: 1.7, t80: 1.7, t80b: 1.7, t90: 1.4, t54: 1.2, t55: 1.2, t3485: 1.2, pz4: 1.1, sherman: 0.7, abrams: 0.25, m1ip: 0.3, leopard: 0.6, leo2a4: 0.6, challenger: 0.5, t14: 0.3 };
 for (const k in KINDS) { const K = KINDS[k]; K.stab = k === 'centurion' ? 0.7 : k === 'sherman' ? 0.2 : STAB[K.era] ?? 0.5; K.rack = RACK[k] ?? (K.cls === 'ifv' ? 0.6 : 1); }
-for (const k of ['t72', 't80', 't90', 't64b', 't80b']) KINDS[k].era = true; // Kontakt / Relikt bricks
+for (const k of ['t72', 't80', 't90', 't64b', 't80b']) KINDS[k].reactive = true; // Kontakt / Relikt bricks
 KINDS.t14.aps = 2; KINDS.abrams.aps = 3; // Afghanit and Trophy
 const newMods = () => ({ track: 0, fire: 0, turret: 0, crew: 0, engine: 0, gun: 0 });
 function ammoName(t, type) {
@@ -2978,7 +2978,7 @@ function armourCheck(tk, hit, pen, dist, top, heat) {
   else if (lp.z < HB.z0 + 1.2) { zone = 'rear'; arm = A[2]; }
   else if (Math.abs(lp.x) > HB.x - 0.2 && lp.z < 2.5) { zone = 'side'; arm = A[1]; }
   // reactive armour: each face carries bricks that break up the first shaped-charge jets to hit it (nothing on the roof or rear)
-  if (heat && tk.K.era && !top && zone !== 'rear') {
+  if (heat && tk.K.reactive && !top && zone !== 'rear') {
     const E = tk.bricks || (tk.bricks = { front: 2, sideL: 1, sideR: 1 }), face = zone === 'front' ? 'front' : lp.x > 0 ? 'sideL' : 'sideR';
     if (E[face] > 0) { E[face]--; era = true; pen *= 0.4; }
   }
@@ -2989,7 +2989,7 @@ function armourCheck(tk, hit, pen, dist, top, heat) {
 }
 // a penetrating hit that finds the ammunition: the tank goes up at once
 function rackHit(tk, zone, top) {
-  let p = 0.11 * tk.K.rack * (top ? 1.8 : zone.startsWith('side') ? 1.6 : zone.startsWith('rear') ? 1.1 : 0.7);
+  let p = 0.08 * tk.K.rack * (top ? 1.8 : zone.startsWith('side') ? 1.6 : zone.startsWith('rear') ? 1.1 : 0.7);
   if (tk.team === 'blue') { if (tk.hp > tk.maxHp * 0.45) return false; p *= 0.6; } // friendly crews get a warning first
   return Math.random() < p;
 }
@@ -3400,7 +3400,7 @@ class Tank {
     if (!this.isPlayer && !this.smoked && this.hp - amount < this.maxHp * 0.55 && this.hp - amount > 0) { this.smoked = true; popSmoke(this); if (this.ai) this.ai.reverseT = 3; } // hit hard: smoke and back off
     if (this.team === 'blue') amount *= this.isPlayer ? EASE.playerArmour : EASE.allyArmour; // heavier friendly armour
     this.hp -= amount; this.lastHit = game.time;
-    if (this.hp <= 0) { this.hp = 0; this.destroy(Math.random() < 0.3 * Math.min(1.5, this.K.rack)); return; }
+    if (this.hp <= 0) { this.hp = 0; this.destroy(Math.random() < 0.2 * Math.min(1.5, this.K.rack)); return; }
     if (this.hp < this.maxHp * 0.35 && !this.smoking) { this.smoking = true; emitters.push({ tank: this, kind: 'damaged', t: 0 }); }
   }
   // knocked out. catastrophic: the ammunition detonates and throws the turret. Otherwise the tank is holed and burning,
@@ -4542,7 +4542,7 @@ function updateCommand(dt) {
   game.tHeld = !!keys.KeyT;
   camera.getWorldDirection(_cmdDir);
   if (keys.KeyV && !game.vHeld) {
-    let best = null, ba = 0.05;
+    let best = null, ba = 0.07;
     for (const t of tanks) {
       if (!t.alive || t.team !== 'red') continue;
       const to = _v1.set(t.pos.x, t.pos.y + 1.5, t.pos.z).sub(camera.position), d = to.length(); if (d > 900) continue;

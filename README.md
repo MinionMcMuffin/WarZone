@@ -28,6 +28,18 @@ Each era is self-contained and has its own map. Switching era rebuilds the world
 
 Armour is modelled in millimetres: every gun has a penetration value that falls off with range, and every vehicle has front, side and rear armour that grows with impact angle, so a Panther shrugs off a Sherman's 76 mm from the front but not from the side. Hits can throw a track, start an engine fire, jam the turret ring or wound a crewman; crews repair in the field. The radar only shows enemies your side has actually spotted. AP rounds punch through armour; HE (or HEAT-MP in later eras) bursts wide against infantry and buildings but bounces off thick plate. Tanks are fastest on roads and paved streets and bog down in beach sand. On foot, sprinting runs you out of breath and your sights sway, less when crouched or prone and almost not at all while you hold your breath. Badly mauled enemy squads break and fall back, and the wider battle rumbles in the distance. Tanks halt to fire (they are far less accurate on the move) and pop smoke and back off when badly hit. Every building can be destroyed: shell it until it collapses, or drive a tank straight through it. IFVs fire rapid autocannons, launch anti-tank missiles and drop off a rifle squad near the enemy.
 
+**Tank warfare**
+
+- **Ways to die.** A penetrating hit can find the ammunition and blow the turret off at once (carousel autoloaders in the T-64/72/80 are the worst for it; the Abrams' blow-out panels and the T-14's crew capsule make it rare). Otherwise a tank is knocked out and left burning, its surviving crew bail out, and the fire may still reach the ammunition a few seconds later. Enemy crews run for their own lines; friendly crews fight on as riflemen.
+- **Bail out.** If your own tank is knocked out rather than blown up, you climb out and carry on fighting on foot.
+- **More to break.** As well as tracks, turret ring, crew and engine fires, hits can now damage the engine (you limp along at under half speed) or jam the breech (no firing until it is cleared).
+- **Gun stabilisation.** WW2 and Korean War guns are only accurate at the halt with the turret still; the aiming ring opens up as you drive or traverse. Vietnam-era stabilisers help, and Cold War and modern tanks shoot accurately on the move. AI crews follow the same rule: old tanks halt to fire, modern ones fight at speed.
+- **Reactive armour.** T-64B, T-80B, T-72B3, T-80BVM and T-90M carry explosive bricks that break up the first HEAT rounds, rockets and missiles to hit each face. Kinetic AP ignores them, and so does a hit on the rear or roof.
+- **Active protection.** The M1A2's Trophy and the T-14's Afghanit shoot down incoming rockets and missiles until their charges run out. Afghanit cannot reach a diving Javelin.
+- **Enemy platoons.** Enemy armour arrives in platoons of two to four with a job: assault head-on, work round a flank (scouts warn you which way), or sit back on overwatch at long range. Tanks turn their frontal armour to the threat when they halt, pick targets they can actually hurt, hold fire when a friend is in the way, and infantry squads move up behind them.
+- **You command the platoon.** `T` cycles your tanks between follow me, hold position and attack. `V` marks the enemy tank in your sights so the whole platoon engages it. `B` calls an artillery fire mission onto the ground you are aiming at (50 second reload, refused if it is danger close).
+- **Enemy artillery.** From wave 2, sitting in one spot for too long brings enemy guns down on you. You get a warning and a few seconds to move.
+
 ## Controls
 
 **Tank commander**
@@ -42,6 +54,9 @@ Armour is modelled in millimetres: every gun has a penetration value that falls 
 | 1 / 2 | Load armour-piercing or high-explosive (switching unloads the round in the breech) |
 | F | IFV: fire a TOW missile (guided onto the crosshair) |
 | X | Smoke grenades: a screen that blocks line of sight |
+| T | Platoon orders: follow me, hold position, attack |
+| V | Mark the enemy tank in your sights for the platoon |
+| B | Artillery fire mission on your aim point |
 | E | IFV: dismount your rifle squad |
 
 **Infantry**
@@ -56,6 +71,7 @@ Armour is modelled in millimetres: every gun has a penetration value that falls 
 | R | Reload |
 | Shift while aiming | Hold your breath to steady the sights |
 | G | Throw a grenade |
+| T / V / B | Order the tanks, mark a target, call artillery |
 
 Esc pauses. Phones and tablets get a joystick, drag-to-aim and on-screen buttons.
 
