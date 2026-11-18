@@ -81,6 +81,30 @@ canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block
 #infCross i:nth-child(4) { height: 2px; width: 9px; top: -1px; left: var(--g); }
 #infCross b { position: absolute; width: 3px; height: 3px; left: -1.5px; top: -1.5px; background: #eef2e4; border-radius: 50%; }
 #infCross.on i, #infCross.on b { background: var(--danger); }
+#tags { position: absolute; inset: 0; pointer-events: none; }
+.tag { position: absolute; left: 0; top: 0; font: 700 13px/1 var(--f-body); letter-spacing: 0.14em; text-transform: uppercase; padding: 4px 8px 3px; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.7); will-change: transform; }
+.tag.pen { background: rgba(234,74,58,0.85); color: #fff; }
+.tag.nopen { border: 1px solid rgba(223,230,207,0.7); color: var(--hud); background: rgba(12,17,13,0.45); }
+.tag.ric { border: 1px solid var(--amber); color: var(--amber); background: rgba(12,17,13,0.45); }
+.tag.kill { font: 900 26px/1 var(--f-display); letter-spacing: 0.08em; color: #ffd8c4; background: none; text-shadow: 0 0 14px rgba(234,74,58,0.9), 0 2px 3px #000; }
+#obj { position: absolute; top: calc(92px + env(safe-area-inset-top, 0px)); left: 18px; max-width: min(46vw, 520px); padding: 7px 12px; background: var(--glass); border-left: 2px solid var(--amber); font-size: 15px; font-weight: 600; letter-spacing: 0.06em; color: var(--hud); }
+#obj::before { content: "OBJECTIVE"; display: block; font-size: 11px; letter-spacing: 0.28em; color: var(--amber); margin-bottom: 2px; }
+#obj.done { border-left-color: var(--ok); }
+#obj.done::before { color: var(--ok); }
+#perks { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%); width: min(960px, calc(100vw - 32px)); box-sizing: border-box; display: grid; gap: 10px; padding: 20px 20px 22px; background: rgba(8,11,9,0.8); border: 1px solid var(--line); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); pointer-events: auto; }
+#perks .pt { font: 900 40px/0.9 var(--f-display); letter-spacing: 0.06em; text-align: center; color: var(--hud); text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
+#perks .ph { text-align: center; font-size: 13px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--amber); }
+#perks .pc { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.perk { display: grid; gap: 8px; align-content: start; text-align: left; padding: 16px 16px 14px; background: var(--slab); border: 1px solid var(--line); border-top: 3px solid var(--amber); color: var(--hud); font-family: var(--f-body); cursor: pointer; }
+.perk:hover, .perk:focus-visible { border-color: var(--amber); outline: none; background: rgba(30,26,16,0.85); }
+.perk kbd { justify-self: start; font: 700 12px/1 var(--f-mono); padding: 4px 7px; border: 1px solid var(--amber); color: var(--amber); }
+.perk b { font: 900 26px/0.95 var(--f-display); letter-spacing: 0.04em; }
+.perk span { font-size: 15px; line-height: 1.35; color: rgba(223,230,207,0.82); }
+.perk i { font-style: normal; color: var(--amber); letter-spacing: 0.2em; font-size: 12px; }
+.aar { display: grid; grid-template-columns: auto 1fr; gap: 5px 16px; font-size: 14px; padding: 12px 0; border-block: 1px solid var(--line); }
+.aar .k { color: var(--hud-dim); letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; padding-top: 2px; }
+.aar .v { color: var(--hud); }
+@media (max-width: 720px) { #perks { top: 50%; } #perks .pc { grid-template-columns: 1fr; gap: 8px; } .perk { padding: 10px 12px; } .perk b { font-size: 21px; } #obj { top: calc(78px + env(safe-area-inset-top, 0px)); font-size: 13px; max-width: 60vw; } }
 #hitmark { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; transition: opacity 0.25s; }
 #hitmark::before, #hitmark::after { content: ""; position: absolute; background: var(--danger); }
 #hitmark::before { left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; mask: linear-gradient(#000 0 35%, transparent 35% 65%, #000 65%); -webkit-mask: linear-gradient(#000 0 35%, transparent 35% 65%, #000 65%); }
@@ -217,6 +241,9 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
   <div id="adsRet" hidden></div>
   <div id="infCross" hidden><i></i><i></i><i></i><i></i><b></b></div>
   <div id="hitmark"></div>
+  <div id="tags"></div>
+  <div id="obj" hidden></div>
+  <div id="perks" hidden><div class="pt">Field promotion</div><div class="ph"></div><div class="pc"></div></div>
   <div id="dmgDirs"></div>
 
   <div id="scope" hidden>
@@ -378,6 +405,7 @@ button.ghost:focus-visible { outline: 2px solid var(--hud); outline-offset: 3px;
       <div class="label">Waves held</div><div class="label">Kills</div><div class="label">Score</div>
       <div class="val" id="oWave">0</div><div class="val" id="oKills">0</div><div class="val" id="oScore">0</div>
     </div>
+    <div class="aar" id="aar"></div>
     <div class="fine" id="oBest"></div>
     <div class="controls"><button class="cta" id="btnRetry">REDEPLOY</button><button class="ghost" id="btnMenu2">Main menu</button></div>
   </div>
@@ -541,6 +569,8 @@ Object.assign(sun.shadow.camera, { left: -SH_EXT, right: SH_EXT, top: SH_EXT, bo
 scene.add(sun, sun.target);
 // Far shadow cascade: a second, wide sun shadow map (the light itself adds no light) so tanks, trees and hills
 // keep their shadows all the way to the horizon; the sharp near map wins wherever it covers the pixel.
+// a soft fill from the viewer's side so vehicles seen against the sun read as shapes, not black cut-outs
+const fillLight = new THREE.DirectionalLight(0xc8d4e8, 1.2); scene.add(fillLight, fillLight.target);
 const sunFar = new THREE.DirectionalLight(0xffffff, 0);
 sunFar.castShadow = true;
 sunFar.shadow.bias = -0.0006; sunFar.shadow.normalBias = 1.4; sunFar.shadow.radius = 2;
@@ -3004,7 +3034,7 @@ function armourCheck(tk, hit, pen, dist, top, heat) {
 // a penetrating hit that finds the ammunition: the tank goes up at once
 function rackHit(tk, zone, top) {
   let p = 0.08 * tk.K.rack * (top ? 1.8 : zone.startsWith('side') ? 1.6 : zone.startsWith('rear') ? 1.1 : 0.7);
-  if (tk.team === 'blue') { if (tk.hp > tk.maxHp * 0.45) return false; p *= 0.6; } // friendly crews get a warning first
+  if (tk.team === 'blue') { if (tk.hp > tk.maxHp * 0.45) return false; p *= 0.6 * (tk.isPlayer ? game.mods.rack : 1); } // friendly crews get a warning first
   return Math.random() < p;
 }
 // component damage: thrown tracks, engine fires, jammed turret rings and wounded crew, each repaired in the field
@@ -3033,6 +3063,7 @@ function spotFromPlayer(dt) {
 }
 function updateModules(t, dt) {
   const M = t.mods; if (!M) return;
+  if (t.isPlayer) dt *= game.mods.repair;
   const say = (m) => { if (t.isPlayer) feed(m, false); };
   if (M.track > 0 && (M.track -= dt) <= 0) say('Track repaired · mobile again');
   if (M.turret > 0 && (M.turret -= dt) <= 0) say('Turret ring freed');
@@ -3110,7 +3141,7 @@ function addDust(sh) {
 }
 for (const k in SCHEMES) {
   SCHEMES[k].mat = new THREE.MeshStandardMaterial({ map: SCHEMES[k].camo, roughness: 0.66, metalness: 0.1, normalMap: armourNormal, normalScale: new THREE.Vector2(0.55, 0.55) });
-  SCHEMES[k].mat.color.setScalar(1.5); SCHEMES[k].mat.envMapIntensity = 1.35;
+  SCHEMES[k].mat.color.setScalar(1.5); SCHEMES[k].mat.envMapIntensity = 2.2;
   SCHEMES[k].mat.onBeforeCompile = (sh) => addDust(sh);
   // hull variant: dried mud and dust caked onto the lower hull and running gear
   const hm = SCHEMES[k].hullMat = SCHEMES[k].mat.clone();
@@ -3259,7 +3290,7 @@ class Tank {
       target *= 1 - clamp(this.slope * 1.4, -0.25, 0.65) * Math.sign(target || 1);
       const braking = Math.sign(target) !== Math.sign(this.speed) && Math.abs(this.speed) > 0.2;
       this.speed = approach(this.speed, target, (braking ? 12 : throttle ? 5 : 3.5) * dt);
-      const turnTarget = this.mods?.track > 0 ? 0 : steer * (0.85 - 0.35 * Math.abs(this.speed) / this.maxF);
+      const turnTarget = this.mods?.track > 0 ? 0 : steer * (0.85 - 0.35 * Math.abs(this.speed) / this.maxF) * (this.isPlayer ? game.mods.turn : 1);
       this.turn = approach(this.turn, turnTarget, 3 * dt);
       this.heading += this.turn * dt;
       const fw = this.forward();
@@ -3410,12 +3441,13 @@ class Tank {
     return true;
   }
   // how far the round may stray: an unstabilised gun is only accurate at the halt with the turret still
-  dispersion() { return 0.0006 + (1 - this.K.stab) * (Math.abs(this.speed) * 0.0024 + Math.abs(this.turretRate || 0) * 0.008 + Math.abs(this.turn) * 0.006); }
+  dispersion() { return (this.isPlayer ? game.mods.disp : 1) * 0.0006 + (this.isPlayer ? game.mods.disp : 1) * (1 - this.K.stab) * (Math.abs(this.speed) * 0.0024 + Math.abs(this.turretRate || 0) * 0.008 + Math.abs(this.turn) * 0.006); }
   damage(amount, from, hitPoint, rack) {
     if (!this.alive) return;
     if (rack) { this.hp = 0; this.lastHit = game.time; this.destroy(true); return; }
     if (!this.isPlayer && !this.smoked && this.hp - amount < this.maxHp * 0.55 && this.hp - amount > 0) { this.smoked = true; popSmoke(this); if (this.ai) this.ai.reverseT = 3; } // hit hard: smoke and back off
-    if (this.team === 'blue') amount *= this.isPlayer ? EASE.playerArmour : EASE.allyArmour; // heavier friendly armour
+    if (this.team === 'blue') amount *= this.isPlayer ? EASE.playerArmour * game.mods.arm : EASE.allyArmour; // heavier friendly armour
+    if (this.isPlayer && game.mode === 'play') game.st.dmg += amount;
     this.hp -= amount; this.lastHit = game.time;
     if (this.hp <= 0) { this.hp = 0; this.destroy(Math.random() < 0.2 * Math.min(1.5, this.K.rack)); return; }
     if (this.hp < this.maxHp * 0.35 && !this.smoking) { this.smoking = true; emitters.push({ tank: this, kind: 'damaged', t: 0 }); }
@@ -3669,7 +3701,7 @@ function impact(s, hit) {
       sfx.ricochet(p);
       const shooter = s.owner, n = hit.localN.clone().transformDirection(tk.v.root.matrixWorld);
       s.v.reflect(n).multiplyScalar(0.55); s.p.copy(p).addScaledVector(n, 0.2); s.owner = tk; s.ric++;
-      if (tk.isPlayer) feed('Ricochet. Armour held.', false); else if (shooter?.isPlayer) feed('Ricochet. No penetration.', true);
+      if (tk.isPlayer) feed('Ricochet. Armour held.', false); else if (shooter?.isPlayer) { feed('Ricochet. No penetration.', true); hitTag(p, 'Ricochet', 'ric'); game.st.hits++; }
       return true;
     }
     if (s.owner && s.owner.team === tk.team) { particles.sparks(p, mg ? 3 : 25); if (!mg) sfx.clang(p); return false; } // no friendly fire
@@ -3681,7 +3713,7 @@ function impact(s, hit) {
       if (ac && tk.team === 'blue') dmg = rr(13, 19) * (s.owner?.K?.dmg ?? 0.25);
       if (tk.K.cls === 'ifv' && !ac) dmg *= 1.4; // thin armour: tank rounds go straight through
       const lp = hit.localP;
-      const pen = (s.owner?.K?.pen ?? 150) * (mine ? 1.15 : 1) * (he ? (oldGun ? 0.2 : 0.65) : 1), dist = s.owner?.pos ? s.owner.pos.distanceTo(p) : 500; // HE barely scratches armour; later HEAT-MP still burns through
+      const pen = (s.owner?.K?.pen ?? 150) * (mine ? 1.15 * game.mods.pen : 1) * (he ? (oldGun ? 0.2 : 0.65) : 1), dist = s.owner?.pos ? s.owner.pos.distanceTo(p) : 500; // HE barely scratches armour; later HEAT-MP still burns through
       const ar = armourCheck(tk, hit, pen, dist, false, he && !oldGun && !ac), zone = ar.zone;
       if (ar.era) { particles.explosion(p, 0.45, false); if (mine) feed('Reactive armour broke up the round', true); }
       let weak = false;
@@ -3696,6 +3728,7 @@ function impact(s, hit) {
       if (he && !ac) particles.explosion(p, 0.7, false);
       if (s.owner?.isPlayer && tk.team === 'red') {
         showHitmark();
+        if (!ac) { game.st.hits++; if (ar.through || weak) game.st.pens++; if (wasAlive && tk.alive) hitTag(p, ar.through ? `Pen · ${zone}` : weak ? 'Weak spot' : ar.era ? 'Reactive armour' : `No pen · ${zone}`, ar.through || weak ? 'pen' : 'nopen'); }
         if (wasAlive && !tk.alive) onKill(tk);
         else if (!ac || mods.length) feed(ar.through || weak ? `${weak ? 'Weak spot' : 'Penetration'} · ${tk.K.name} · ${zone}${mods.length ? ' · ' + mods.join(', ') : ''}` : `No penetration · ${tk.K.name} ${zone}${mods.length ? ' · ' + mods.join(', ') : ' · flank it'}`, !(ar.through || weak) && !mods.length);
       } else if (wasAlive && !tk.alive) {
@@ -4093,9 +4126,11 @@ function onPlayerHit(from, dmg, quiet) {
   }
 }
 function onKill(tk) {
+  game.st.tanks[tk.K.name] = (game.st.tanks[tk.K.name] || 0) + 1;
+  hitTag(_v1.set(tk.pos.x, tk.pos.y + 3.2, tk.pos.z), tk.ace ? 'Ace destroyed' : tk.catastrophic ? 'Destroyed' : 'Knocked out', 'kill'); killBeat(tk.ace ? 1.1 : 0.55);
   game.kills++; const pts = Math.round(100 * game.wave * (tk.K.pts || 1)); game.score += pts;
   game.ammo = player.tank?.K.ac ? Math.min(600, game.ammo + 30) : Math.min(60, game.ammo + 3);
-  feed(`${tk.K.name} ${tk.catastrophic ? 'destroyed · ammunition detonated' : 'knocked out · crew bailing'} · +${pts}`, false);
+  feed(`${tk.ace ? tk.aceName : tk.K.name} ${tk.catastrophic ? 'destroyed · ammunition detonated' : 'knocked out · crew bailing'} · +${pts}`, false);
   bigMsg(tk.catastrophic ? 'TARGET DESTROYED' : 'TARGET KNOCKED OUT', null, 1.4);
 }
 
@@ -4127,6 +4162,11 @@ function drawCompass(heading) {
     cctx.globalAlpha = 1; cctx.fillStyle = '#ea4a3a';
     const x = W / 2 + rel * pxPerDeg; cctx.beginPath(); cctx.moveTo(x, 78); cctx.lineTo(x - 7, 66); cctx.lineTo(x + 7, 66); cctx.fill();
   }
+  const op = pe0 && objectivePoint();
+  if (op) {
+    const rel = wrapAngle(heading - Math.atan2(op.x - pe0.pos.x, op.z - pe0.pos.z)) * 180 / Math.PI, x = W / 2 + clamp(rel, -58, 58) * pxPerDeg;
+    cctx.globalAlpha = 1; cctx.fillStyle = '#ffd36b'; cctx.beginPath(); cctx.moveTo(x, 58); cctx.lineTo(x + 8, 68); cctx.lineTo(x, 78); cctx.lineTo(x - 8, 68); cctx.closePath(); cctx.fill();
+  }
   cctx.globalAlpha = 1; cctx.fillStyle = '#f0a43a'; cctx.fillRect(W / 2 - 1.5, 40, 3, 26);
 }
 function drawRadar(dt) {
@@ -4147,7 +4187,7 @@ function drawRadar(dt) {
   for (let i = 0; i <= 64; i++) { const a = i / 64 * 6.28, [x, y] = toR(Math.cos(a) * (ARENA + 60), Math.sin(a) * (ARENA + 60)); i ? rctx.lineTo(x, y) : rctx.moveTo(x, y); }
   rctx.stroke(); rctx.setLineDash([]);
   // village
-  { const [x, y] = toR(VILLAGE.x, VILLAGE.y); rctx.strokeStyle = 'rgba(223,230,207,0.4)'; rctx.strokeRect(x - 10, y - 10, 20, 20); }
+  { const [x, y] = toR(VILLAGE.x, VILLAGE.y), o = game.obj?.type === 'village' && !game.obj.done && !game.obj.failed; rctx.strokeStyle = o ? '#ffd36b' : 'rgba(223,230,207,0.4)'; rctx.lineWidth = o ? 3 : 2; rctx.strokeRect(x - 10, y - 10, 20, 20); }
   // fog of war: enemies show only while someone on your side can see them (or just saw their muzzle flash)
   const seen = (e) => e.team !== 'red' || !e.alive ? 1 : clamp(1 - (game.time - (e.spottedT ?? -99) - 3) / 4, 0, 1);
   for (const t of tanks) {
@@ -4157,6 +4197,7 @@ function drawRadar(dt) {
     rctx.save(); rctx.translate(x, y); rctx.rotate(-(t.heading - view));
     rctx.fillStyle = !t.alive ? 'rgba(223,230,207,0.35)' : t.team === 'red' ? '#ea4a3a' : '#7fb8ff';
     rctx.beginPath(); rctx.moveTo(0, -9); rctx.lineTo(6, 7); rctx.lineTo(-6, 7); rctx.closePath(); rctx.fill(); rctx.restore();
+    if (t.ace && t.alive) { rctx.strokeStyle = '#ffd36b'; rctx.lineWidth = 2.5; rctx.beginPath(); rctx.arc(x, y, 13, 0, 6.28); rctx.stroke(); }
   }
   for (const e of emplacements) {
     const vis = seen(e); if (vis <= 0) continue; rctx.globalAlpha = vis;
@@ -4328,7 +4369,7 @@ function reinforceAllies() {
   if (!playerEnt()?.alive) return;
   const taken = new Set(tanks.filter((t) => t.role === 'ally' && t.alive).map((t) => t.ai.slot));
   let n = 0;
-  for (let i = 0; i < BATTLE[battleName].allies; i++) if (!taken.has(i)) { spawnAlly(i); n++; }
+  for (let i = 0; i < Math.min(ALLY_SLOTS.length, BATTLE[battleName].allies + game.mods.allies); i++) if (!taken.has(i)) { spawnAlly(i); n++; }
   if (n) feed(`${n} allied tank${n > 1 ? 's' : ''} rejoined the ${n > 3 ? 'company' : 'platoon'}`, false);
   reinforceInfantry();
 }
@@ -4351,8 +4392,10 @@ function nextWave() {
   for (let i = 0; i < empN; i++) spawnEmplacement();
   if (HELI[era]?.red && game.wave >= 2 && Math.random() < 0.3 + game.wave * 0.12) game.redHeliT = rr(20, 45);
   if (era === 'modern' && game.wave >= 2) { game.droneQ = Math.round(Math.min(1 + game.wave, 7) * (battleName === 'standard' ? 1 : 1.5)); game.droneT = rr(10, 20); }
+  game.obj = null;
   const names = [...new Set(Array.from({ length: 6 }, () => KINDS[pickEnemyKind(game.wave)].name))].slice(0, 3).join(' · ');
   bigMsg(`WAVE ${game.wave}`, `${game.toSpawn} tanks and ${game.squadsToSpawn} infantry squads inbound · ${names}`, 3.4);
+  newObjective();
 }
 function updateWaves(dt) {
   if (game.squadsToSpawn > 0) {
@@ -4360,19 +4403,22 @@ function updateWaves(dt) {
     const B = BATTLE[battleName], redAlive = soldiers.reduce((n, x) => n + (x.team === 'red' && x.alive ? 1 : 0), 0);
     if (game.squadT <= 0 && redAlive + B.size <= B.redCap) { spawnSquad(B.size); game.squadsToSpawn--; game.squadT = rr(...B.gap); }
   }
-  const redInf = soldiers.some((x) => x.team === 'red' && x.alive && !x.crew);
+  const redInf = soldiers.some((x) => x.team === 'red' && x.alive && !x.crew && !x.empCrew); // dug-in gun crews hold on into the next wave
   if (game.toSpawn > 0) {
     game.spawnT -= dt;
     const alive = tanks.filter((t) => t.team === 'red' && t.alive).length;
-    if (game.spawnT <= 0 && alive < BATTLE[battleName].alive) { spawnEnemy(); game.toSpawn--; game.spawnT = battleName === 'epic' ? rr(0.15, 0.4) : battleName === 'massive' ? rr(0.8, 2) : battleName === 'large' ? rr(1.2, 3) : rr(2, 4.5); }
+    if (game.spawnT <= 0 && alive < BATTLE[battleName].alive) { const nt = spawnEnemy(); game.toSpawn--; if (nt && game.obj?.type === 'ace' && !game.obj.ace && game.toSpawn <= game.obj.at) makeAce(nt); game.spawnT = battleName === 'epic' ? rr(0.15, 0.4) : battleName === 'massive' ? rr(0.8, 2) : battleName === 'large' ? rr(1.2, 3) : rr(2, 4.5); }
   } else if (game.waveTimer <= 0 && !tanks.some((t) => t.team === 'red' && t.alive) && !redInf && !(game.squadsToSpawn > 0)) {
     game.waveTimer = 7;
-    bigMsg(`WAVE ${game.wave} CLEARED`, 'Field repairs and resupply', 3);
-    const pt = playerEnt(); pt.hp = Math.min(pt.maxHp, pt.hp + 35); game.ammo = Math.max(game.ammo, pt.K?.ac ? 400 : 40); if (pt.K?.tow) game.tow = pt.K.tow; if (pt.K?.carry) pt.dismounted = false; game.smoke = 2; if (pt.K?.aps) pt.aps = pt.K.aps;
-    if (player.soldier) { const G = GUNS[ERA_INF[era].gun], L = LAUNCHERS[ERA_INF[era].at]; inf.reserve = G.reserve; inf.at = Math.min(L.max, inf.at + 2); inf.nades = Math.min(4, inf.nades + 2); if (!inf.atLoaded) inf.reloadT = Math.min(inf.reloadT, 0.1); spawnFireteam(); }
+    const O = game.obj; if (O && !O.done) { O.failed = true; feed('Objective not achieved', true); }
+    bigMsg(`WAVE ${game.wave} CLEARED`, O?.done ? 'Objective complete · two field promotions' : 'Field repairs, resupply and a field promotion', 3);
+    game.perkPicks = O?.done ? 2 : 1;
+    const pt = playerEnt(); pt.hp = Math.min(pt.maxHp, pt.hp + 35); game.ammo = Math.max(game.ammo, pt.K?.ac ? 400 : 40); if (pt.K?.tow) game.tow = pt.K.tow; if (pt.K?.carry) pt.dismounted = false; game.smoke = 2 + game.mods.smoke; if (pt.K?.aps) pt.aps = pt.K.aps;
+    if (player.soldier) { const G = GUNS[ERA_INF[era].gun], L = LAUNCHERS[ERA_INF[era].at]; inf.reserve = G.reserve; inf.at = Math.min(L.max + game.mods.atMax, inf.at + 2); inf.nades = Math.min(4, inf.nades + 2); if (!inf.atLoaded) inf.reloadT = Math.min(inf.reloadT, 0.1); spawnFireteam(); }
     reinforceAllies();
   }
-  if (game.waveTimer > 0) { game.waveTimer -= dt; if (game.waveTimer <= 0) { cleanupWrecks(); nextWave(); } }
+  if (game.perkPicks > 0 && !game.perkOpen && game.waveTimer > 0 && game.waveTimer < 5.6 && playerEnt()?.alive) openPerks();
+  if (game.waveTimer > 0 && !game.perkOpen && !(game.perkPicks > 0 && game.waveTimer < 1)) { game.waveTimer -= dt; if (game.waveTimer <= 0) { cleanupWrecks(); nextWave(); } }
 }
 function cleanupWrecks() {
   // keep the newest wrecks, remove older ones to bound draw calls
@@ -4480,6 +4526,8 @@ function updateAI(t, dt) {
     }
   } else if (ai.retarget <= 0 || Math.hypot(ai.target.x - t.pos.x, ai.target.y - t.pos.z) < 12) {
     ai.retarget = rr(7, 13);
+    // the last few tanks of an attack stop hanging back and press home
+    if (t.team === 'red' && ai.role !== 'assault' && game.toSpawn <= 0 && tanks.reduce((n, o) => n + (o.alive && o.team === 'red' ? 1 : 0), 0) <= 2) ai.role = 'assault';
     let want = rr(80, 160), off = rr(-0.9, 0.9), stay = false;
     if (ai.role === 'overwatch') {
       // a good fire position at long range is worth keeping
@@ -4583,7 +4631,7 @@ function updatePlayer(dt) {
     aimTurret(t, cam.aim, dt, 1.1, 0.6);
     if ((mouse.fire || mouse.pressed || touch.fire) && game.ammo > 0 && t.reload <= 0) {
       mouse.pressed = false;
-      if (t.fire(game.ammoType === 'HE')) { game.ammo--; addShake(t.K.ac ? 0.05 : 0.35); lastReloadReady = !!t.K.ac; }
+      if (t.fire(game.ammoType === 'HE')) { game.ammo--; if (!t.K.ac) game.st.shots++; addShake(t.K.ac ? 0.05 : 0.35); lastReloadReady = !!t.K.ac; }
     }
     if (t.reload > 0.3) mouse.pressed = false; // don't queue a shot from a click made mid-reload
     // ammunition: [1] armour-piercing, [2] high explosive; changing type means unloading the round in the breech
@@ -4612,6 +4660,8 @@ const ORDERS = { follow: 'FOLLOW ME', hold: 'HOLD POSITION', attack: 'ATTACK' };
 const _cmdDir = new THREE.Vector3();
 function updateCommand(dt) {
   const pe = playerEnt(); if (!pe?.alive) return;
+  updateObjective(dt);
+  if (game.mods.regen && player.soldier && game.time - player.soldier.lastHit > 6) player.soldier.hp = Math.min(player.soldier.maxHp, player.soldier.hp + game.mods.regen * dt);
   game.fireT = Math.max(0, (game.fireT || 0) - dt);
   if (keys.KeyT && !game.tHeld) {
     game.order = game.order === 'follow' ? 'hold' : game.order === 'hold' ? 'attack' : 'follow';
@@ -4640,8 +4690,8 @@ function updateCommand(dt) {
     else if (d < 70) feed('Fire mission refused · danger close', true);
     else if (d > 1100) feed('Fire mission refused · no target point', true);
     else {
-      game.fireT = 50;
-      support.missions.push({ c: new THREE.Vector3(p.x, 0, p.z), n: 9, t: 5.5, live: true, r: 20, mine: true });
+      game.fireT = 50 * game.mods.arty;
+      support.missions.push({ c: new THREE.Vector3(p.x, 0, p.z), n: 9 + game.mods.artyN, t: 5.5, live: true, r: 20, mine: true });
       feed(`Fire mission · ${Math.round(d)} m to the ${compassWord(p.x - pe.pos.x, p.z - pe.pos.z)} · splash in 5 seconds`, false); sfx.beep(true);
     }
   }
@@ -4992,7 +5042,8 @@ class Soldier {
   center(out) { return out.set(this.pos.x, this.pos.y + this.height() * 0.55, this.pos.z); }
   damage(amount, from, blast) {
     if (!this.alive) return;
-    if (this.team === 'blue') amount *= this.isPlayer ? EASE.playerInf : EASE.allyInf;
+    if (this.team === 'blue') amount *= this.isPlayer ? EASE.playerInf * game.mods.inf : EASE.allyInf;
+    if (this.isPlayer && game.mode === 'play') game.st.dmg += amount;
     this.hp -= amount; this.lastHit = game.time; this.flinch = 1; this.supp = Math.min(2, this.supp + 0.5);
     if (this.isPlayer) onPlayerHit(from, amount, amount < 30);
     if (this.hp <= 0) {
@@ -5247,7 +5298,7 @@ function rocketImpact(s, hit) {
   if (s.owner && tk.team === s.owner.team) return;
   particles.penetration(p);
   const top = !!s.spec.lock && s.v.y < -s.v.length() * 0.3;
-  const ar = armourCheck(tk, hit, s.spec.pen ?? 300, 0, top, true), how = ar.zone;
+  const ar = armourCheck(tk, hit, (s.spec.pen ?? 300) * (s.owner?.isPlayer ? game.mods.pen : 1), 0, top, true), how = ar.zone;
   if (ar.era && s.owner?.isPlayer) feed('Reactive armour broke up the warhead', true);
   let dmg = s.spec.dmg;
   if (top) dmg *= 1.5; else if (how.startsWith('rear')) dmg *= 1.6; else if (how.startsWith('side')) dmg *= 1.25;
@@ -5255,7 +5306,7 @@ function rocketImpact(s, hit) {
   const mods = moduleHit(tk, hit.localP, how, ar.through);
   const wasAlive = tk.alive;
   tk.damage(dmg, s.owner, p, ar.through && rackHit(tk, how, top));
-  if (s.owner?.isPlayer) { showHitmark(); if (wasAlive && !tk.alive) onKill(tk); else feed(`${ar.through ? 'Penetration' : 'No penetration'} · ${tk.K.name} · ${how}${mods.length ? ' · ' + mods.join(', ') : ''}`, !ar.through); }
+  if (s.owner?.isPlayer) { showHitmark(); game.st.hits++; if (ar.through) game.st.pens++; if (tk.alive) hitTag(p, ar.through ? `Pen · ${how}` : ar.era ? 'Reactive armour' : `No pen · ${how}`, ar.through ? 'pen' : 'nopen'); if (wasAlive && !tk.alive) onKill(tk); else feed(`${ar.through ? 'Penetration' : 'No penetration'} · ${tk.K.name} · ${how}${mods.length ? ' · ' + mods.join(', ') : ''}`, !ar.through); }
   else if (wasAlive && !tk.alive) feed(tk.team === 'red' ? `${tk.K.name} destroyed by ${s.owner?.isSoldier || !s.owner?.K ? 'infantry' : withArticle(s.owner.K.name)}` : `${tk.K.name} lost to ${s.owner?.isSoldier || !s.owner?.K ? withArticle(ERA_INF[era].redAT) : withArticle(s.owner.K.name)}`, tk.team !== 'red');
   if (tk.isPlayer) onPlayerHit(s.owner, dmg);
 }
@@ -5270,7 +5321,7 @@ function soldierImpact(s, hit) {
   if (s.owner?.isPlayer && sd.team === 'red') { showHitmark(); if (!sd.alive && !sd.counted) onKillSoldier(sd); }
 }
 function onKillSoldier(sd) {
-  if (sd.counted) return; sd.counted = true;
+  if (sd.counted) return; sd.counted = true; game.st.inf++;
   game.kills++; const pts = 25 * Math.max(1, game.wave); game.score += pts;
   feed(`${sd.K.name} down · +${pts}`, false);
 }
@@ -5649,9 +5700,9 @@ function updateSupport(dt) {
   if (game.mode === 'play' && Math.random() < dt * 0.45) sfx.distant(Math.random() < 0.4 ? 'boom' : Math.random() < 0.5 ? 'mg' : 'rifle');
   if (game.mode === 'play' && pe) {
     support.airT -= dt; support.artT -= dt;
-    if (support.airT <= 0) { support.airT = battleName === 'massive' ? rr(30, 50) : rr(45, 75); launchAirStrike(); }
+    if (support.airT <= 0) { support.airT = (battleName === 'massive' ? rr(30, 50) : rr(45, 75)) * game.mods.air; launchAirStrike(); }
     if (HELI[era]?.blue && (support.heliT -= dt) <= 0) {
-      support.heliT = rr(80, 120) * (battleName === 'standard' ? 1.2 : 1);
+      support.heliT = rr(80, 120) * (battleName === 'standard' ? 1.2 : 1) * game.mods.air;
       const n = battleName === 'standard' ? 1 : 2; let h;
       for (let i = 0; i < n; i++) h = spawnHeli('blue');
       if (h) feed(`Gunships on station · ${h.H.name}${n > 1 ? 's' : ''}`, false);
@@ -5906,7 +5957,7 @@ function hitEmplacement(e, by, chance = 1) {
   for (const m of e.v.meshes) m.material = wreckMat;
   e.v.root.rotation.z = rr(-0.35, 0.35); e.v.pitchN.rotation.x = 0.25;
   for (const s of soldiers) if (s.empCrew === e && s.alive && s.pos.distanceTo(p) < 4.5) s.damage(rr(60, 140), by, p);
-  if (by?.isPlayer) { game.kills++; const pts = 80 * Math.max(1, game.wave); game.score += pts; feed(`${e.E.name} destroyed · +${pts}`, false); showHitmark(); }
+  if (by?.isPlayer) { game.kills++; game.st.guns++; hitTag(p, 'Position destroyed', 'kill'); killBeat(0.4); const pts = 80 * Math.max(1, game.wave); game.score += pts; feed(`${e.E.name} destroyed · +${pts}`, false); showHitmark(); }
   else if (playerEnt() && playerEnt().pos.distanceTo(p) < 600) feed(`${by?.K?.name || 'Allies'} knocked out a ${e.E.name}`, false);
 }
 function clearEmplacements() { for (const e of emplacements) { scene.remove(e.v.root); e.coll.dead = true; } emplacements.length = 0; }
@@ -6168,10 +6219,10 @@ function airHit(a, s, p) {
   a.hp -= amt; particles.sparks(p, s.mg ? 4 : 14); if (Math.random() < 0.4) sfx.ping(p);
   if (s.owner?.isPlayer) showHitmark();
   if (a.hp > 0) return;
-  if (a.isDrone) { droneBlast(a, null); if (s.owner?.isPlayer) { game.score += 20 * Math.max(1, game.wave); feed('Drone shot down', false); } return; }
+  if (a.isDrone) { droneBlast(a, null); if (s.owner?.isPlayer) { game.st.air++; game.score += 20 * Math.max(1, game.wave); feed('Drone shot down', false); } return; }
   a.alive = false; a.spin = rr(1.5, 3) * (Math.random() < 0.5 ? 1 : -1);
   particles.explosion(a.pos, 1.1, false); sfx.explosion(a.pos, 1.2);
-  if (s.owner?.isPlayer && a.team === 'red') { game.kills++; const pts = Math.round(160 * Math.max(1, game.wave)); game.score += pts; feed(`${a.H.name} shot down · +${pts}`, false); bigMsg('HELICOPTER DOWN', null, 1.6); }
+  if (s.owner?.isPlayer && a.team === 'red') { game.st.air++; hitTag(a.pos, 'Shot down', 'kill'); killBeat(0.8); game.kills++; const pts = Math.round(160 * Math.max(1, game.wave)); game.score += pts; feed(`${a.H.name} shot down · +${pts}`, false); bigMsg('HELICOPTER DOWN', null, 1.6); }
   else if (a.team === 'red') feed(`${s.owner?.K?.name || 'Allies'} shot down a ${a.H.name}`, false);
   else feed(`${a.H.name} shot down`, true);
 }
@@ -6225,6 +6276,168 @@ function updateThermal(dt) {
   }
   heatBig.geometry.setDrawRange(0, nb); heatBig.geometry.attributes.position.needsUpdate = true;
   heatSmall.geometry.setDrawRange(0, ns); heatSmall.geometry.attributes.position.needsUpdate = true;
+}
+
+// =====================================================================
+// Field promotions, wave objectives, hit feedback and the after-action report
+// =====================================================================
+function freshMods() { return { pen: 1, arm: 1, disp: 1, turn: 1, repair: 1, rack: 1, smoke: 0, arty: 1, artyN: 0, allies: 0, air: 1, inf: 1, sway: 1, regen: 0, atMax: 0 }; }
+function freshStats() { return { shots: 0, hits: 0, pens: 0, tanks: {}, inf: 0, air: 0, guns: 0, dmg: 0, objs: 0, objTried: 0, perks: [], t0: game.time }; }
+game.mods = freshMods(); game.st = freshStats(); game.perkRanks = {};
+const eraWord = (m) => m[era] ?? m.ww2;
+const PERKS = [
+  { id: 'loader', role: 'tank', name: 'Veteran loader', desc: 'Reload 15% faster.', max: 3, apply(t) { t.reloadTime *= 0.85; } },
+  { id: 'ammo', role: 'tank', name: () => eraWord({ ww2: 'Tungsten-core shot', korea: 'HVAP rounds', vietnam: 'Improved HEAT rounds', coldwar: 'Tungsten APFSDS', modern: 'Depleted-uranium darts' }), desc: '+15% armour penetration on every round you fire.', max: 3, apply() { game.mods.pen *= 1.15; } },
+  { id: 'armour', role: 'tank', name: () => eraWord({ ww2: 'Sandbags and spare track', korea: 'Spare track and sandbags', vietnam: 'RPG screens', coldwar: 'Appliqué armour', modern: 'Slat armour and ERA kit' }), desc: 'Take 15% less damage from every hit.', max: 3, apply() { game.mods.arm *= 0.85; } },
+  { id: 'repair', role: 'tank', name: 'Field workshop', desc: '+20% hull strength and a full repair right now.', max: 3, apply(t) { t.maxHp *= 1.2; t.hp = t.maxHp; } },
+  { id: 'rack', role: 'tank', name: 'Extra ready rack', desc: '+15 rounds now, and one more smoke salvo every wave.', max: 3, apply(t) { game.ammo += t.K.ac ? 150 : 15; game.mods.smoke++; game.smoke++; } },
+  { id: 'gunnery', role: 'tank', name: 'Gunnery school', desc: 'Your rounds scatter 35% less, on the move or at the halt.', max: 2, apply() { game.mods.disp *= 0.65; } },
+  { id: 'engine', role: 'tank', name: 'Tuned engine', desc: '+15% top speed and a faster turn.', max: 2, apply(t) { t.maxF *= 1.15; game.mods.turn *= 1.12; } },
+  { id: 'crew', role: 'tank', name: 'Crew drill', desc: 'Damage is repaired 65% faster, fires burn out sooner and the ammunition is stowed safer.', max: 2, apply() { game.mods.repair *= 1.65; game.mods.rack *= 0.6; } },
+  { id: 'arty', role: 'any', name: 'Priority fire support', desc: 'Your artillery [B] reloads 35% faster and fires three more rounds per mission.', max: 2, apply() { game.mods.arty *= 0.65; game.mods.artyN += 3; } },
+  { id: 'platoon', role: 'any', name: 'Reinforced platoon', desc: 'One more tank joins your platoon, from now on.', max: 3, apply() { game.mods.allies++; reinforceAllies(); } },
+  { id: 'air', role: 'any', name: 'Close air support', desc: 'Air strikes and gunships arrive 40% more often.', max: 2, apply() { game.mods.air *= 0.6; support.airT *= 0.6; support.heliT = (support.heliT ?? 60) * 0.6; } },
+  { id: 'mags', role: 'inf', name: 'Extra magazines', desc: '+50% rifle ammunition and two more grenades.', max: 3, apply() { inf.reserve += Math.round(GUNS[ERA_INF[era].gun].reserve * 0.5); inf.nades += 2; } },
+  { id: 'plates', role: 'inf', name: () => eraWord({ ww2: 'Entrenching and cover drill', korea: 'Flak vest', vietnam: 'Flak vest', coldwar: 'Kevlar vest', modern: 'Heavier plate carrier' }), desc: 'Take 20% less damage.', max: 3, apply() { game.mods.inf *= 0.8; } },
+  { id: 'rockets', role: 'inf', name: 'More anti-tank rounds', desc: 'Carry two more launcher rounds, and get them now.', max: 2, apply() { game.mods.atMax += 2; inf.at += 2; } },
+  { id: 'steady', role: 'inf', name: 'Marksman', desc: 'Aim sway reduced by 40%.', max: 2, apply() { game.mods.sway *= 0.6; } },
+  { id: 'medic', role: 'inf', name: 'Combat medic', desc: 'Heal slowly when out of contact. Full heal now.', max: 1, apply() { game.mods.regen = 3; const s = player.soldier; if (s) s.hp = s.maxHp; } },
+];
+const perkName = (p) => typeof p.name === 'function' ? p.name() : p.name;
+let perkChoices = [];
+function openPerks() {
+  const role = player.soldier ? 'inf' : 'tank';
+  const pool = PERKS.filter((p) => (p.role === role || p.role === 'any') && (game.perkRanks[p.id] || 0) < p.max && !(p.id === 'platoon' && BATTLE[battleName].allies + game.mods.allies >= ALLY_SLOTS.length));
+  perkChoices = [];
+  while (perkChoices.length < 3 && pool.length) perkChoices.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  if (!perkChoices.length) { game.perkPicks = 0; return; }
+  game.perkOpen = true;
+  const el = $('perks');
+  el.querySelector('.ph').textContent = game.perkPicks > 1 ? 'Objective bonus · choose two' : 'Choose one';
+  el.querySelector('.pc').innerHTML = perkChoices.map((p, i) => {
+    const r = game.perkRanks[p.id] || 0;
+    return `<button class="perk" data-i="${i}"><kbd>${isTouch ? 'TAP' : i + 1}</kbd><b>${perkName(p)}</b><span>${p.desc}</span><i>${'●'.repeat(r + 1)}${'○'.repeat(p.max - r - 1)}</i></button>`;
+  }).join('');
+  el.querySelectorAll('.perk').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); choosePerk(+b.dataset.i); }));
+  el.hidden = false;
+  sfx.reloaded();
+}
+function choosePerk(i) {
+  const p = perkChoices[i]; if (!game.perkOpen || !p) return;
+  const t = player.tank;
+  game.perkRanks[p.id] = (game.perkRanks[p.id] || 0) + 1;
+  if (p.role !== 'tank' || t) p.apply(t);
+  game.st.perks.push(perkName(p));
+  feed(`Promotion · ${perkName(p)}`, false);
+  $('perks').hidden = true; game.perkOpen = false;
+  game.perkPicks--;
+}
+addEventListener('keydown', (e) => { if (game.perkOpen && /^Digit[1-3]$/.test(e.code)) { choosePerk(+e.code.slice(5) - 1); keys[e.code] = false; e.stopImmediatePropagation(); } }, true);
+
+// ---- Objectives: one task per wave, worth a bonus promotion ----
+const ACE_TAG = { ww2: 'Ace "Black 217"', dday: 'Ace "Black 217"', korea: 'Hero tank "215"', vietnam: 'Ace "Highland 701"', coldwar: 'Guards ace "Red 101"', modern: 'Ace "Vityaz 01"' };
+function newObjective() {
+  const opts = ['ace', 'village'];
+  if (emplacements.some((e) => e.alive)) opts.push('guns', 'guns');
+  let type = opts[Math.floor(Math.random() * opts.length)];
+  if (type === game.lastObj && opts.length > 1) type = opts.find((o) => o !== type);
+  game.lastObj = type;
+  game.obj = { type, done: false, failed: false, prog: 0, ace: null, at: Math.max(0, Math.floor(game.toSpawn * rr(0.3, 0.6))), smokeT: 0 };
+  game.st.objTried++;
+  const msg = { ace: 'An enemy ace is leading this attack. Find and destroy it.', village: 'Take the village: clear it of enemy armour and hold it.', guns: 'Knock out every enemy anti-tank position.' }[type];
+  setTimeout(() => { if (game.mode === 'play' && game.obj?.type === type) feed(`Objective · ${msg}`, false); }, 3600);
+}
+function makeAce(t) {
+  t.ace = true; t.maxHp *= 1.8; t.hp = t.maxHp; t.reloadTime *= 0.75; t.spread *= 0.45; t.maxF *= 1.1;
+  t.aceName = `${ACE_TAG[era]} · ${t.K.name}`; t.spottedT = game.time;
+  game.obj.ace = t;
+  const pe = playerEnt();
+  if (pe) feed(`Radio intercept · ${t.aceName} to the ${compassWord(t.pos.x - pe.pos.x, t.pos.z - pe.pos.z)}`, true);
+}
+function objectiveDone() {
+  const O = game.obj; if (!O || O.done || O.failed) return;
+  O.done = true; game.st.objs++;
+  const pts = 300 * Math.max(1, game.wave); game.score += pts;
+  bigMsg('OBJECTIVE COMPLETE', `+${pts} · bonus promotion when the wave is cleared`, 2.8); sfx.beep(true);
+}
+function objectivePoint() {
+  const O = game.obj; if (!O || O.done || O.failed) return null;
+  if (O.type === 'ace') return O.ace?.alive ? O.ace.pos : null;
+  if (O.type === 'village') return _objP.set(VILLAGE.x, VILLAGE_H, VILLAGE.y);
+  const pe = playerEnt(); let best = null, bd = 1e9;
+  for (const e of emplacements) if (e.alive && game.time - e.spottedT < 30) { const d = pe ? e.pos.distanceTo(pe.pos) : 0; if (d < bd) { bd = d; best = e.pos; } }
+  return best;
+}
+const _objP = new THREE.Vector3();
+function updateObjective(dt) {
+  const O = game.obj, el = $('obj'); if (!O) { el.hidden = true; return; }
+  const pe = playerEnt();
+  let txt = '';
+  if (O.type === 'ace') {
+    if (O.ace) { O.ace.spottedT = game.time; if (!O.ace.alive) objectiveDone(); }
+    txt = O.ace ? `Destroy ${O.ace.aceName}${pe && O.ace.alive ? ` · ${Math.round(O.ace.pos.distanceTo(pe.pos))} m` : ''}` : 'Destroy the enemy ace · not yet sighted';
+  } else if (O.type === 'guns') {
+    const left = emplacements.filter((e) => e.alive && empCrew(e)).length;
+    if (!left) objectiveDone();
+    txt = `Knock out the anti-tank positions · ${left} left`;
+  } else if (O.type === 'village' && !O.done) {
+    const d = pe ? Math.hypot(pe.pos.x - VILLAGE.x, pe.pos.z - VILLAGE.y) : 1e9;
+    const armour = tanks.some((t) => t.alive && t.team === 'red' && Math.hypot(t.pos.x - VILLAGE.x, t.pos.z - VILLAGE.y) < 90);
+    const inf2 = soldiers.filter((s) => s.alive && s.team === 'red' && Math.hypot(s.pos.x - VILLAGE.x, s.pos.z - VILLAGE.y) < 55).length;
+    const contested = armour || inf2 > 1, inside = d < 55;
+    if (inside && !contested) O.prog = Math.min(1, O.prog + dt / 22);
+    if (O.prog >= 1) objectiveDone();
+    txt = `Take the village · ${inside ? (contested ? 'contested · clear the enemy out' : `securing ${Math.round(O.prog * 100)}%`) : `${Math.round(d)} m · ${Math.round(O.prog * 100)}%`}`;
+    // green smoke marks the objective
+    if ((O.smokeT -= dt) <= 0) { O.smokeT = 0.12; const gy = terrainHeight(VILLAGE.x, VILLAGE.y); smokePool.emit({ x: VILLAGE.x + rr(-1, 1), y: gy + 0.8, z: VILLAGE.y + rr(-1, 1), vx: wind.x + rr(-0.5, 0.5), vy: rr(2.5, 4), vz: wind.z + rr(-0.5, 0.5), life: rr(5, 8), s0: 0.8, s1: rr(5, 8), c0: [0.35, 0.75, 0.3, 0.55], c1: [0.5, 0.7, 0.45, 0], drag: 0.6 }); }
+  }
+  if (O.done) txt = 'Objective complete · bonus promotion at the end of the wave';
+  else if (O.failed) txt = 'Objective not achieved';
+  el.hidden = false; el.textContent = txt; el.classList.toggle('done', O.done);
+}
+
+// ---- Hit tags: what your round did, written where it struck ----
+const tags = [];
+function hitTag(p, text, kind) {
+  const el = document.createElement('div'); el.className = 'tag ' + kind; el.textContent = text; $('tags').appendChild(el);
+  tags.push({ p: p.clone(), el, t: kind === 'kill' ? 2.2 : 1.5, t0: kind === 'kill' ? 2.2 : 1.5 });
+  if (tags.length > 6) { const o = tags.shift(); o.el.remove(); }
+}
+function updateTags(dt) {
+  for (let i = tags.length - 1; i >= 0; i--) {
+    const g = tags[i]; g.t -= dt;
+    if (g.t <= 0) { g.el.remove(); tags.splice(i, 1); continue; }
+    _proj.copy(g.p).project(camera);
+    if (_proj.z > 1) { g.el.style.opacity = 0; continue; }
+    const rise = (g.t0 - g.t) * 18;
+    g.el.style.opacity = Math.min(1, g.t * 2);
+    g.el.style.transform = `translate(${((_proj.x * 0.5 + 0.5) * innerWidth).toFixed(1)}px, ${((-_proj.y * 0.5 + 0.5) * innerHeight - rise).toFixed(1)}px) translate(-50%, -100%)`;
+  }
+}
+function clearTags() { for (const g of tags) g.el.remove(); tags.length = 0; }
+// a beat of slow motion when you make a kill
+function killBeat(k = 0.55) { game.slowT = Math.max(game.slowT || 0, k); }
+
+// ---- After-action report ----
+function rankFor(score) {
+  const R = [[0, 'Private'], [800, 'Corporal'], [2500, 'Sergeant'], [6000, 'Lieutenant'], [12000, 'Captain'], [22000, 'Major'], [40000, 'Colonel']];
+  let r = R[0][1]; for (const [s, n] of R) if (score >= s) r = n; return r;
+}
+function fillAAR() {
+  const S = game.st, mins = Math.max(0, game.time - S.t0) / 60;
+  const tanksTxt = Object.entries(S.tanks).sort((a, b) => b[1] - a[1]).map(([n, c]) => `${c}× ${n}`).join(', ') || 'none';
+  const acc = S.shots ? Math.round(S.hits / S.shots * 100) : 0, pen = S.hits ? Math.round(S.pens / S.hits * 100) : 0;
+  const rows = [
+    ['Rank earned', rankFor(game.score)],
+    ['Time in action', `${Math.floor(mins)} min ${Math.round((mins % 1) * 60)} s`],
+    ['Armour destroyed', tanksTxt],
+    ['Infantry', `${S.inf}`], ['Anti-tank positions', `${S.guns}`], ['Aircraft and drones', `${S.air}`],
+    ['Gunnery', S.shots ? `${S.shots} fired · ${acc}% hit · ${pen}% of hits penetrated` : 'no rounds fired'],
+    ['Objectives', `${S.objs} of ${S.objTried}`],
+    ['Damage taken', `${Math.round(S.dmg)}`],
+    ['Promotions', S.perks.length ? S.perks.join(', ') : 'none'],
+  ];
+  $('aar').innerHTML = rows.map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join('');
 }
 
 // ---- First-person player ----
@@ -6500,7 +6713,7 @@ function updateInfantryCamera(dt) {
     const hold = (keys.ShiftLeft || keys.ShiftRight) && inf.ads > 0.6 && (inf.breath ?? 4) > 0;
     inf.breath = clamp((inf.breath ?? 4) + (hold ? -dt : dt * 0.6), -2, 4);
     const posture = s.prone > 0.5 ? 0.3 : s.crouch > 0.5 ? 0.55 : 1;
-    const amp = 0.0045 * posture * (1 + (1 - (inf.stam ?? 1)) * 1.6 + s.supp * 0.6) * (hold ? 0.12 : inf.breath < 0 ? 1.8 : 1) * inf.ads;
+    const amp = 0.0045 * game.mods.sway * posture * (1 + (1 - (inf.stam ?? 1)) * 1.6 + s.supp * 0.6) * (hold ? 0.12 : inf.breath < 0 ? 1.8 : 1) * inf.ads;
     const tt = game.time;
     camera.rotateY(Math.sin(tt * 0.9) * amp + noise2(tt * 0.6, 3) * amp * 0.5);
     camera.rotateX(Math.sin(tt * 1.8) * amp * 0.6 + noise2(tt * 0.6, 9) * amp * 0.5);
@@ -6578,6 +6791,7 @@ function updateHUD(dt) {
   camera.updateMatrixWorld(); // project markers with this frame's camera, not last frame's
   $('clu').hidden = true; $('adsRet').hidden = true; $('infCross').hidden = true; $('wLabel').textContent = player.tank ? ammoName(player.tank, game.ammoType) + ' [1 AP · 2 HE]' + (player.tank.K.tow ? ` · TOW ${game.tow} [F]` : '') + (player.tank.K.carry && !player.tank.dismounted ? ' · squad [E]' : '') + ` · smoke ${game.smoke ?? 0} [X]` + (player.tank.K.thermal ? ` · ${game.thermal ? 'TI ON' : 'TI'} [N]` : '') : '';
   { const n = tanks.reduce((a, x) => a + (x.role === 'ally' && x.alive ? 1 : 0), 0); $('vCmd').textContent = `Platoon ${n} · ${ORDERS[game.order] || ORDERS.follow} [T] · mark [V] · guns ${game.fireT > 0 ? Math.ceil(game.fireT) + ' s' : 'ready'} [B]`; }
+  updateTags(dt);
   if (player.soldier) return updateInfantryHUD(dt);
   $('w2Label').textContent = 'Coax MG' + (t0aps() ? ` · APS ${player.tank.aps}` : '');
   const t = player.tank; if (!t) return;
@@ -6816,9 +7030,10 @@ function startGame() {
   sfx.init();
   game.role = titleRole;
   resetWorld();
-  Object.assign(game, { squadsToSpawn: 0, mode: 'play', wave: 0, kills: 0, score: 0, waveTimer: 0, toSpawn: 0, ammo: player.tank?.K.ac ? 400 : 40, tow: player.tank?.K.tow || 0, towT: 0, smoke: 2, ammoType: 'AP', mgHeat: 0, mgCool: false, order: 'follow', focus: null, focusT: 0, fireT: 0, anchor: null, plt: null, bailed: false, thermal: false, redHeliT: 0, droneQ: 0, droneT: 0, droneMsg: false });
+  Object.assign(game, { squadsToSpawn: 0, mode: 'play', wave: 0, kills: 0, score: 0, waveTimer: 0, toSpawn: 0, ammo: player.tank?.K.ac ? 400 : 40, tow: player.tank?.K.tow || 0, towT: 0, smoke: 2, ammoType: 'AP', mgHeat: 0, mgCool: false, order: 'follow', focus: null, focusT: 0, fireT: 0, anchor: null, plt: null, bailed: false, perkOpen: false, perkPicks: 0, slowT: 0, obj: null, lastObj: null, thermal: false, redHeliT: 0, droneQ: 0, droneT: 0, droneMsg: false });
   for (const a of [...dmgDirs.children]) a.remove();
   $('feed').innerHTML = '';
+  game.mods = freshMods(); game.st = freshStats(); game.perkRanks = {}; $('perks').hidden = true; clearTags();
   setScreen(null);
   requestLock();
   for (let i = 0; i < BATTLE[battleName].allies; i++) spawnAlly(i);
@@ -6834,9 +7049,10 @@ function gameOver() {
   if (game.score > game.best) { game.best = game.score; try { localStorage.setItem('warzone.best', String(game.best)); } catch (e) { } }
   setTimeout(() => {
     if (document.pointerLockElement) document.exitPointerLock();
-    $('overTitle').textContent = player.soldier ? 'KILLED IN ACTION' : 'KNOCKED OUT'; $('overEyebrow').textContent = player.soldier ? 'Man down' : 'Vehicle lost';
+    $('overTitle').textContent = player.soldier ? 'KILLED IN ACTION' : player.tank?.catastrophic ? 'DESTROYED' : 'KNOCKED OUT'; $('overEyebrow').textContent = player.soldier ? 'Man down' : 'Vehicle lost';
     $('oWave').textContent = Math.max(0, game.wave - 1); $('oKills').textContent = game.kills; $('oScore').textContent = game.score;
     $('oBest').textContent = `Best score on this device: ${game.best}`;
+    $('perks').hidden = true; game.perkOpen = false; fillAAR();
     setScreen('over');
   }, 2600);
 }
@@ -6845,7 +7061,7 @@ $('btnRetry').addEventListener('click', startGame);
 $('btnResume').addEventListener('click', resumeGame);
 function returnToMenu() {
   if (document.pointerLockElement) document.exitPointerLock();
-  game.mode = 'title'; clearTimeout(msgTimer); $('msg').classList.remove('show'); $('feed').innerHTML = '';
+  game.mode = 'title'; clearTimeout(msgTimer); game.perkOpen = false; $('perks').hidden = true; clearTags(); game.obj = null; $('obj').hidden = true; $('msg').classList.remove('show'); $('feed').innerHTML = '';
   for (const a of [...dmgDirs.children]) a.remove();
   mouse.fire = mouse.zoom = mouse.pressed = false; cam.zoomToggle = false; damageFx = 0; grade.uniforms.damage.value = 0; grade.uniforms.scope.value = 0; grade.uniforms.supp.value = 0;
   vmPass.enabled = false; wasAlive = true; game.thermal = false; grade.uniforms.thermal.value = 0; heatBig.visible = heatSmall.visible = false; smokePool.mesh.visible = true;
@@ -6865,6 +7081,7 @@ addEventListener('resize', () => {
 
 const clock = new THREE.Clock();
 let wasAlive = true, farFrame = 0;
+const _fillUp = new THREE.Vector3(0, 8, 0), _fillDir = new THREE.Vector3();
 // adaptive quality: if the frame rate sags during play, step the graphics down so the game stays playable
 const perfWatch = { acc: 0, n: 0, slow: 0, last: performance.now(), off: /noauto/.test(location.hash) };
 function watchFrameRate() {
@@ -6882,7 +7099,8 @@ function watchFrameRate() {
 function frame() {
   watchFrameRate();
   const dt = Math.min(clock.getDelta(), 1 / 20);
-  const simDt = game.mode === 'paused' ? 0 : dt;
+  game.slowT = Math.max(0, (game.slowT || 0) - dt);
+  const simDt = game.mode === 'paused' ? 0 : dt * (game.slowT > 0 ? 0.3 + 0.7 * (1 - Math.min(1, game.slowT / 0.25)) : 1);
   game.time += simDt;
   windUniform.value += simDt;
   flatCloudMat.uniforms.time.value += simDt; cloudU.cloudTime.value += simDt;
@@ -6932,6 +7150,7 @@ function finishFrame(dt) {
     if (pe.alive) wasAlive = true;
     updateHUD(dt);
   }
+  fillLight.position.copy(camera.position).add(_fillUp); fillLight.target.position.copy(camera.position).addScaledVector(camera.getWorldDirection(_fillDir), 40); fillLight.target.updateMatrixWorld();
   // keep the shadow frustum centred on the action, snapped to texels to stop shimmering
   const focus = pe && game.mode !== 'title' ? pe.pos : player.tank ? player.tank.pos : camera.position;
   const texel = (2 * sun.shadow.camera.right) / sun.shadow.mapSize.x;
@@ -6979,7 +7198,7 @@ applyQuality();
 $('loading').hidden = true;
 setScreen('title');
 requestAnimationFrame(frame);
-window.__warzone = { watchFrameRate, cityBuildings, game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, sun, sunFar, support, _dbg: { shells, segmentHit, hasLOS, terrainHeight, Tank, newAI }, sim: (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { game.time += dt; simStep(dt); updateCamera(dt); camera.updateMatrixWorld(); } }, aoPass, renderPass, nearGrass, soldiers, inf, keys, spawnSquad, air, emplacements, spawnHeli, spawnDrone, spawnEmplacement, support2: () => support, setEra: (e, r) => { era = e; titleRole = r; game.role = r; loadPlayerKind(); showTankChoice(); resetWorld(); } };
+window.__warzone = { fillLight, SCHEMES, PERKS, choosePerk, openPerks, watchFrameRate, cityBuildings, game, tanks, player, cam, camera, renderer, startGame, spawnEnemy, mouse, LAKE_Y, sun, sunFar, support, _dbg: { shells, segmentHit, hasLOS, terrainHeight, Tank, newAI }, sim: (sec, dt = 0.05) => { for (let t = 0; t < sec; t += dt) { game.time += dt; simStep(dt); updateCamera(dt); camera.updateMatrixWorld(); } }, aoPass, renderPass, nearGrass, soldiers, inf, keys, spawnSquad, air, emplacements, spawnHeli, spawnDrone, spawnEmplacement, support2: () => support, setEra: (e, r) => { era = e; titleRole = r; game.role = r; loadPlayerKind(); showTankChoice(); resetWorld(); } };
 </script>
 </body>
 </html>
