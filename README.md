@@ -33,10 +33,15 @@ Armour is modelled in millimetres: every gun has a penetration value that falls 
 - **Objectives.** Every wave comes with a task: destroy an enemy ace (a tougher, faster-loading, more accurate tank with its own name, ringed in gold on the radar), take the village (get in, clear out their armour and hold it while green smoke marks the spot), or knock out every anti-tank position. The objective panel and a gold diamond on the compass point the way. Completing it scores a bonus and an extra promotion.
 - **Field promotions.** Each cleared wave you choose one of three upgrades (press 1, 2 or 3, or tap). Tank crews can take a faster loader, better ammunition, extra armour, a field workshop, a bigger ready rack, gunnery school, a tuned engine or crew drill. On foot you get extra magazines, body armour, more launcher rounds, a steadier aim or a medic. Either way you can take priority fire support, a reinforced platoon or close air support. Most stack up to three ranks.
 - **Hit feedback.** Your rounds tag what they did where they struck: PEN and the zone, NO PEN, WEAK SPOT, RICOCHET or REACTIVE ARMOUR. Kills get a big DESTROYED or KNOCKED OUT and a beat of slow motion.
+- **Medals and a service record.** Earn medals mid-battle (First Blood, Double Tap, Tank Ace, Armour Breaker, Long Shot, Giant Killer, Ace Hunter, Sky Guard, Gun Line Breaker, Iron Wall, Survivor, Mission First, Iron Will, Old Soldier). Your battles, tanks destroyed, best wave and every medal are kept on this device and shown on the title screen.
+- **Hold the line.** A fourth objective: keep enemy armour out of a crossroads marked by green smoke until the wave is beaten. Every enemy tank inside wears the line down.
 - **After-action report.** When your battle ends you see the rank you earned, time in action, armour destroyed by type, infantry, positions and aircraft, your gunnery accuracy and penetration rate, objectives, damage taken and the promotions you chose.
 - Dug-in anti-tank crews don't hold up the end of a wave; whatever survives stays in position into the next one. The last two tanks of an attack stop hanging back and press home.
 
 **Tank warfare**
+
+- **Special rounds.** Press 3 for a handful of scarce sub-calibre rounds (APCR in WW2, HVAP in Korea, APDS in Vietnam, tungsten APFSDS in the Cold War, DU darts in the modern era): 45% more penetration and a flatter, faster flight. Five per wave; the ready-rack promotion adds more.
+- **Battle damage you can see.** Penetrations leave scorched holes, bounces leave bright gouges and HE leaves scorch marks on the real hull surface, and they stay there. A thrown track drops off and lies in the dirt beside the tank until the crew refit it.
 
 - **Ways to die.** A penetrating hit can find the ammunition and blow the turret off at once (carousel autoloaders in the T-64/72/80 are the worst for it; the Abrams' blow-out panels and the T-14's crew capsule make it rare). Otherwise a tank is knocked out and left burning, its surviving crew bail out, and the fire may still reach the ammunition a few seconds later. Enemy crews run for their own lines; friendly crews fight on as riflemen.
 - **Bail out.** If your own tank is knocked out rather than blown up, you climb out and carry on fighting on foot.
@@ -64,7 +69,7 @@ Armour is modelled in millimetres: every gun has a penetration value that falls 
 | Left click | Fire the main gun |
 | Right click / Shift | Gunner's sight (zoom) |
 | Space | Coaxial machine gun |
-| 1 / 2 | Load armour-piercing or high-explosive (switching unloads the round in the breech) |
+| 1 / 2 / 3 | Load armour-piercing, high-explosive or special rounds (switching unloads the round in the breech) |
 | F | IFV: fire a TOW missile (guided onto the crosshair) |
 | X | Smoke grenades: a screen that blocks line of sight |
 | N | Thermal sight (Cold War and modern tanks) |
